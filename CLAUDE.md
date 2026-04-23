@@ -46,10 +46,18 @@ URL builders, omnibox handlers, live overrides merge), `options.html` +
 
 ## Testing
 
-- **Parser logic in isolation:** the repeated pattern in this repo's
-  conversation history is to `cat bangs.js` into a Node `-e` script,
-  inline the `tokenize` / `parse` / `buildExternalUrl` helpers, and run
-  cases against it. Use this for any change to parsing or URL building.
+- **Unit tests:** `npm test` (Node 20+, no dependencies — uses the built-in
+  `node:test` runner). Source files are loaded inside a `vm` sandbox with a
+  stubbed `browser.*` API by `test/helpers.js`, and the tests assert
+  against `resolveAndBuild` / `parse` / `paramsFor` / etc.
+  - Cross-realm gotcha: arrays/objects built inside the vm have a
+    different `Array.prototype` than outer-test literals, so the tests
+    use `require('node:assert')` (non-strict `deepEqual`, prototype-
+    insensitive). Don't switch to `node:assert/strict` without accounting
+    for this.
+  - `vm.createContext` is passed `URL`, `URLSearchParams`, `Set`, etc.
+    explicitly because they're **not** default built-ins in vm contexts.
+    Adding a source file that uses a new intrinsic → update `helpers.js`.
 
 - **Full extension:** `about:debugging#/runtime/this-firefox` → Load
   Temporary Add-on → pick `manifest.json`. Re-pick after every edit
