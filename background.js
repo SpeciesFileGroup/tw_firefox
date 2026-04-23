@@ -53,11 +53,23 @@ function matchInstance(token) {
   return m ? m[1] : null;
 }
 
-// Peels off the bang and any @host tokens; returns the remaining raw tokens.
-// `bangToken` is the literal token the user typed (e.g. "!col" or "col!"), so
-// we can reconstruct working content for example suggestions.
+// Peels off the bang, any @host tokens, and a trailing tab-disposition
+// marker; returns the remaining raw tokens. `bangToken` is the literal token
+// the user typed (e.g. "!col" or "col!"), so we can reconstruct working
+// content for example suggestions.
+//   trailing |   → force open in a new foreground tab
+//   trailing ||  → force open in a new background tab
+// The marker must be the very last token — otherwise it's treated as a
+// regular query token, so values that happen to contain `|` aren't
+// accidentally interpreted as a disposition override.
 function parse(input) {
   const tokens = tokenize(input.trim());
+  let disposition = null;
+
+  const last = tokens[tokens.length - 1];
+  if (last === '|')       { disposition = 'newForegroundTab'; tokens.pop(); }
+  else if (last === '||') { disposition = 'newBackgroundTab'; tokens.pop(); }
+
   let target = null;
   let bangToken = null;
   let hostName = null;
@@ -72,7 +84,7 @@ function parse(input) {
 
     rest.push(tok);
   }
-  return { target, bangToken, hostName, rest };
+  return { target, bangToken, hostName, disposition, rest };
 }
 
 // Converts leftover tokens into URL params for an internal (TW filter) target.
@@ -110,9 +122,26 @@ function buildInternalUrl(hostUrl, target, params) {
   // fullPath: used verbatim under /tasks/ (non-filter tasks like browse/new).
   // path:    filter resource; /filter is auto-appended.
   if (target.rawPath) {
-    if (!qs) return `${base}${target.rawPath}`;
-    const sep = target.rawPath.includes('?') ? '&' : '?';
-    return `${base}${target.rawPath}${sep}${qs}`;
+    let path = target.rawPath;
+    let appendable = params;
+
+    if (path.includes('{}')) {
+      // Prefer bare terms (joined into `query_term`); fall back to `id:` so
+      // both `!sel 50` and `!sel id:50` work. The consumed param is removed
+      // from the append list so it doesn't also end up in the query string.
+      let consumedIdx = params.findIndex(([k]) => k === 'query_term');
+      if (consumedIdx < 0) consumedIdx = params.findIndex(([k]) => k === 'id');
+      const value = consumedIdx >= 0 ? params[consumedIdx][1] : '';
+      if (consumedIdx >= 0) appendable = params.filter((_, i) => i !== consumedIdx);
+      path = path.replace('{}', encodeURIComponent(value));
+    }
+
+    const appendQs = appendable
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
+    if (!appendQs) return `${base}${path}`;
+    const sep = path.includes('?') ? '&' : '?';
+    return `${base}${path}${sep}${appendQs}`;
   }
   const subPath = target.fullPath || `${target.path}/filter`;
   const fullUrlPath = `/tasks/${subPath}`;
@@ -159,11 +188,11 @@ async function getActiveTabOrigin() {
 }
 
 async function resolveAndBuild(input) {
-  const { target, hostName, rest } = parse(input);
-  if (!target) return { url: null, target: null, host: null, note: null, source: null };
+  const { target, hostName, disposition, rest } = parse(input);
+  if (!target) return { url: null, target: null, host: null, note: null, source: null, disposition: null };
 
   if (target.url) {
-    return { url: buildExternalUrl(target, rest), target, host: null, note: null, source: null };
+    return { url: buildExternalUrl(target, rest), target, host: null, note: null, source: null, disposition };
   }
 
   const hosts = await loadHosts();
@@ -171,7 +200,7 @@ async function resolveAndBuild(input) {
   const autoDetected = matchHostByOrigin(hosts, origin);
   const { host, note, source } = resolveHost(hosts, hostName, autoDetected);
   const params = paramsFor(rest);
-  return { url: buildInternalUrl(host.url, target, params), target, host, note, source };
+  return { url: buildInternalUrl(host.url, target, params), target, host, note, source, disposition };
 }
 
 browser.omnibox.setDefaultSuggestion({
@@ -179,8 +208,12 @@ browser.omnibox.setDefaultSuggestion({
 });
 
 browser.omnibox.onInputChanged.addListener(async (input, suggest) => {
-  const { target, bangToken, hostName, rest } = parse(input);
+  const { target, bangToken, hostName, disposition, rest } = parse(input);
   const suggestions = [];
+
+  const dispTag = disposition === 'newForegroundTab' ? '  ↗ new tab'
+                : disposition === 'newBackgroundTab' ? '  ↘ new bg tab'
+                : '';
 
   if (target) {
     if (target.url) {
@@ -243,10 +276,24 @@ browser.omnibox.onInputChanged.addListener(async (input, suggest) => {
   suggest(suggestions);
 });
 
-browser.omnibox.onInputEntered.addListener(async (input, disposition) => {
-  const { url } = await resolveAndBuild(input);
+browser.omnibox.onInputEntered.addListener(async (input, keyDisposition) => {
+  const { url, disposition: override } = await resolveAndBuild(input);
   if (!url) return;
 
+  // Precedence:
+  //   1. User-typed `+` / `++` marker.
+  //   2. Explicit modifier-key gesture (anything other than plain Enter).
+  //   3. Configured default (user preference).
+  //   4. Fallback: current tab.
+  const { defaultDisposition } = await browser.storage.local.get('defaultDisposition');
+  let disposition;
+  if (override) {
+    disposition = override;
+  } else if (keyDisposition && keyDisposition !== 'currentTab') {
+    disposition = keyDisposition;
+  } else {
+    disposition = defaultDisposition || 'currentTab';
+  }
   switch (disposition) {
     case 'newForegroundTab': await browser.tabs.create({ url }); break;
     case 'newBackgroundTab': await browser.tabs.create({ url, active: false }); break;

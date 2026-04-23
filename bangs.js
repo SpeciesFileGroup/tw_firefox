@@ -3,7 +3,10 @@
 //   - Internal task:   { fullPath, label }  → /tasks/<fullPath>   (non-filter
 //                                             tasks like browse / new_foo)
 //   - Raw path:        { rawPath, label }   → <rawPath>           (absolute,
-//                                             for top-level pages like /hub)
+//                                             for top-level pages like /hub).
+//                                             May contain `{}` as a placeholder
+//                                             that is filled with the URL-encoded
+//                                             bare query (or `id:` fallback).
 //   - External:        { url, label }       → arbitrary URL template; `{}` is
 //                                             replaced with the URL-encoded query.
 // Either kind may include an optional `examples: [{ query, hint }]` that the
@@ -188,6 +191,14 @@ const BANGS = {
   hubs:        SOURCES_HUB_TARGET,
   leadshub:    { fullPath: 'leads/hub',                                              label: 'Leads hub' },
   omh:         { fullPath: 'observation_matrices/observation_matrix_hub',            label: 'Observation matrix hub' },
+
+  // --- Project switcher ---
+  sel:         { rawPath: '/projects/{}/select',                                     label: 'Select project',
+                 examples: [
+                   { query: '50',    hint: 'select project 50' },
+                   { query: 'id:50', hint: 'same, key:value form' }
+                 ] },
+  project:     { rawPath: '/projects/{}/select',                                     label: 'Select project' },
 
   // --- Dashboards ---
   dlo:         { fullPath: 'loans/dashboard',                                        label: 'Loans dashboard' },

@@ -83,6 +83,20 @@
     </details>
   </section>
 
+  <section>
+    <h2>Default tab behavior</h2>
+    <div class="hint">
+      Where to open results when you press plain Enter (no modifier key and
+      no <code>|</code>/<code>||</code> marker in the query). Alt+Enter,
+      Ctrl+Alt+Enter, and <code>|</code>/<code>||</code> always override this.
+    </div>
+    <label><input type="radio" name="default-disposition" value="currentTab">      Current tab (default)</label><br>
+    <label><input type="radio" name="default-disposition" value="newForegroundTab"> New tab (foreground)</label><br>
+    <label><input type="radio" name="default-disposition" value="newBackgroundTab"> New background tab</label>
+    <div class="actions"><button id="save-pref">Save</button></div>
+    <div id="pref-status"></div>
+  </section>
+
 <script src="bangs.js"></script>
 <script src="hosts.js"></script>
 <script src="options.js"></script>

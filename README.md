@@ -32,6 +32,9 @@ on your configured TaxonWorks instance.
 | `tw !bn "Smith, J."`                 | Bionomia roster search                            |
 | `tw !doi 10.1234/abcd`               | Resolve a DOI via `dx.doi.org`                    |
 | `tw !gnp Aedes aegypti L.`           | GN Parser (with details)                          |
+| `tw !t Apis |`                       | Open taxon names filter in a new tab              |
+| `tw !col Aedes aegypti ||`           | Open CoL result in a new **background** tab       |
+| `tw !sel 50`                         | Switch to project 50 (rawPath `{}` substitution)  |
 
 ## Installing (temporary / development)
 
@@ -80,6 +83,27 @@ except inside double quotes.
     full-text match.
   - External services → substituted into the `{}` placeholder in the service's
     URL template.
+- **Tab-disposition markers** — a trailing ` |` (space then pipe) forces the
+  result into a new foreground tab; trailing ` ||` forces a new background
+  tab (current tab keeps focus). The marker must be the last whitespace-
+  separated token in the query; values like `foo|bar` or `Apis||` (no
+  preceding space) are treated as regular content, so there's no collision
+  with query values that happen to contain `|`. `|` is Shift+Backslash on a
+  US layout, directly above Enter, so no hand movement between completing
+  the query and marking the disposition. Overrides both the key-modifier
+  behavior (Alt+Enter, etc.) and the configured default below.
+
+## Tab behavior
+
+By default, pressing plain Enter opens the result in the current tab. You can
+change this in the options page — pick one of **Current tab**, **New tab**,
+or **New background tab**. The full precedence is:
+
+1. **Query marker** — `|` or `||` in the typed query wins.
+2. **Modifier-key gesture** — if Firefox hands us an explicit disposition
+   (Alt+Enter, Ctrl+Alt+Enter, middle-click), that wins.
+3. **Configured default** — the options-page setting above.
+4. **Fallback** — current tab.
 
 ## TaxonWorks filter bangs
 

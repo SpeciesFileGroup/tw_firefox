@@ -274,3 +274,25 @@ document.getElementById('save-bangs').addEventListener('click', saveBangs);
 renderBuiltins();
 loadBangs();
 load();
+
+// ---- Default disposition ----
+
+const prefStatus = document.getElementById('pref-status');
+
+async function loadPref() {
+  const { defaultDisposition } = await browser.storage.local.get('defaultDisposition');
+  const value = defaultDisposition || 'currentTab';
+  const radio = document.querySelector(`input[name="default-disposition"][value="${value}"]`);
+  if (radio) radio.checked = true;
+}
+
+async function savePref() {
+  const chosen = document.querySelector('input[name="default-disposition"]:checked');
+  if (!chosen) return;
+  await browser.storage.local.set({ defaultDisposition: chosen.value });
+  prefStatus.textContent = 'Saved.';
+  prefStatus.style.color = '#0a0';
+}
+
+document.getElementById('save-pref').addEventListener('click', savePref);
+loadPref();
