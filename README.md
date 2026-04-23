@@ -32,8 +32,8 @@ on your configured TaxonWorks instance.
 | `tw !bn "Smith, J."`                 | Bionomia roster search                            |
 | `tw !doi 10.1234/abcd`               | Resolve a DOI via `dx.doi.org`                    |
 | `tw !gnp Aedes aegypti L.`           | GN Parser (with details)                          |
-| `tw !t Apis |`                       | Open taxon names filter in a new tab              |
-| `tw !col Aedes aegypti ||`           | Open CoL result in a new **background** tab       |
+| `tw !t Apis \|`                      | Open taxon names filter in a new tab              |
+| `tw !col Aedes aegypti \|\|`         | Open CoL result in a new **background** tab       |
 | `tw !sel 50`                         | Switch to project 50 (rawPath `{}` substitution)  |
 
 ## Installing (temporary / development)
@@ -74,7 +74,12 @@ except inside double quotes.
 - **Quoted value** — `key:"two words"`. Use for anything with spaces.
 - **Array value** (TW filters only) — `key:a,b,c` expands to
   `key[]=a&key[]=b&key[]=c`. For values that legitimately contain commas, quote
-  them: `key:"a, b"`.
+  them: `key:"a, b"`. The extension also ships a snapshot of which TW filter
+  params are declared as arrays (e.g. `bibtex_type`, `author_id`,
+  `taxon_name_id`); for those, `key:value` automatically becomes `key[]=value`,
+  so you don't have to remember which params want the bracket form. If TW
+  added a new array param after the snapshot was taken, you can still force
+  it with `key[]:value` or `key:value,` (trailing comma).
 - **Instance selector** — `@name` anywhere in the input picks which configured
   TaxonWorks host to send to. No `@name` means "use the configured default".
   Ignored for external service bangs.
@@ -92,6 +97,119 @@ except inside double quotes.
   US layout, directly above Enter, so no hand movement between completing
   the query and marking the disposition. Overrides both the key-modifier
   behavior (Alt+Enter, etc.) and the configured default below.
+
+## Filter chains
+
+You can throw the result of one filter into another, the same way TaxonWorks'
+"radial filter" UI does it. Use `>` (Unix-style output redirection) between
+stages — read left-to-right, "send the result of A into B":
+
+```
+tw !s with_doi:true > !tn
+   ↳ Sources that have a DOI → throw to Taxon names
+```
+
+Becomes:
+
+```
+/tasks/taxon_names/filter?source_query[with_doi]=true
+```
+
+Each stage's params get wrapped under the upstream target's `<resource>_query`
+namespace, exactly like the radial UI does. The destination is the **last**
+stage — its bang determines the URL path; preceding stages contribute their
+filter conditions as nested sub-scopes that TW evaluates server-side.
+
+### Practical examples
+
+| Question | Chain |
+| --- | --- |
+| All taxon names described in a source with a DOI | `tw !s with_doi:true > !tn` |
+| All taxon names described in a book | `tw !s bibtex_type:book > !tn` |
+| All taxon names described in a journal article published since 2020 | `tw !s bibtex_type:article year_start:2020 > !tn` |
+| All taxon names described by a specific author | `tw !s author_id:42 > !tn` |
+| Collection objects of a specific taxon | `tw !t name:Apis > !otu > !co` |
+| Collection objects whose taxon was described in a book | `tw !s bibtex_type:book > !tn > !otu > !co` |
+| Asserted distributions for taxa described since 2020 | `tw !s year_start:2020 > !tn > !ad` |
+| Biological associations involving a specific subject taxon | `tw !t name:Apis > !ba` |
+| Same as above, but on sandbox, open in a background tab | `tw !t name:Apis > !ba @sandbox \|\|` |
+
+### Multi-stage nesting
+
+Chains are recursive — each additional stage adds another layer of
+`<resource>_query[…]` wrapping around the ones before it:
+
+```
+tw !s bibtex_type:book > !tn rank:species > !co year:2020
+  → /tasks/collection_objects/filter
+       ?taxon_name_query[source_query][bibtex_type][]=book
+       &taxon_name_query[rank][]=species
+       &year=2020
+```
+
+### Intermediate stages matter
+
+A chain composes filters — it doesn't walk the TaxonWorks data model for
+you. If two filters aren't directly linked in TW's schema, you have to
+include the bridging filter(s) explicitly.
+
+The classic case: **TaxonName → CollectionObject**. In TW's data model,
+taxon names don't attach to collection objects directly — they attach via
+**OTUs** (an OTU represents "a particular way of circumscribing a taxon
+name for use"). So a chain from a taxon-name constraint to collection
+objects has to route through OTUs:
+
+```
+# WRONG (will produce zero results)
+tw !s with_doi:true in_project:true > !tn rank:"NomenclaturalRank::Iczn::SpeciesGroup::Species" > !co
+
+# RIGHT (routes through OTU)
+tw !s with_doi:true in_project:true > !tn rank:"NomenclaturalRank::Iczn::SpeciesGroup::Species" > !otu > !co
+```
+
+The correct form produces:
+
+```
+/tasks/collection_objects/filter
+  ?otu_query[taxon_name_query][source_query][with_doi]=true
+  &otu_query[taxon_name_query][source_query][in_project]=true
+  &otu_query[taxon_name_query][rank][]=NomenclaturalRank::Iczn::SpeciesGroup::Species
+```
+
+…which is exactly what TW's radial UI produces when you throw a TaxonName
+filter result → OTU → CollectionObject. Without the `!otu` stage, the
+CollectionObject filter doesn't know how to interpret a `taxon_name_query`
+wrap because the relationship isn't direct — hence zero results.
+
+Rule of thumb: if you're chaining between two resources and can't think of
+how they'd be linked without an intermediate (OTU, source citation,
+collecting event, etc.), include the intermediate as its own stage. When
+in doubt, look at what the radial UI produces for the same throw; our
+chain URLs match its wrapping byte-for-byte.
+
+### Chain-global modifiers
+
+`@host` and the trailing tab marker (`|` / `||`) apply to the whole chain,
+regardless of where you put them:
+
+```
+tw !s bibtex_type:book > !tn @sandbox |
+  → opens the chained taxon-names URL on @sandbox in a new foreground tab
+```
+
+**What can chain into what?** Any filter bang can be a stage source as long as
+TW's destination filter accepts the upstream's `<resource>_query` sub-scope —
+in practice, almost all filter pairs work because TW's filter classes share a
+generalized cross-resource query mechanism. External-service bangs (e.g.
+`!col`, `!gbif`) and non-filter bangs (browse, new, hub) cannot be chain
+sources or destinations — the omnibox suggestion will surface a warning if
+you try.
+
+**Caveat:** if a chain produces an extremely long URL (>2 KB), TW's own UI
+falls back to a `_stateId` + `localStorage` mechanism that we cannot
+participate in from a separate origin's session. Chains that bloat past that
+limit will fail at the server. In practice this only happens with
+multi-clause chains stacked across several stages.
 
 ## Tab behavior
 
@@ -315,6 +433,32 @@ overrides.
   implemented; explicit `@name` or the configured default is what you get.
 - Some external services (notably ITIS) only expose POST-based search forms,
   which can't be linked to directly and therefore aren't included.
+
+## Testing
+
+Run the test suite:
+
+```sh
+npm test
+```
+
+No dependencies — uses Node 20+'s built-in `node:test` runner. Tests evaluate
+the source files inside a `vm` sandbox with a stubbed `browser.*` API, then
+assert against URLs returned from `resolveAndBuild` and related pure
+functions. No network calls, no real tabs, no real storage.
+
+The `test/` directory is not referenced from `manifest.json`, so Firefox
+never loads it. When packaging for distribution (e.g. `web-ext build`), add
+`test/` and `package.json` to the ignore list so they don't end up in the
+shipped `.xpi`.
+
+Test files:
+
+- `test/parse.test.js` — tokenization, bang/host/disposition extraction, chain splits
+- `test/url.test.js` — URL building for internal filters, external services, rawPath, auto-bracketing, host resolution
+- `test/chain.test.js` — chain URL nesting, global @host/disposition in chains, validation errors
+
+Add new cases alongside these as you add features.
 
 ## Publishing status
 

@@ -287,6 +287,66 @@ const BANGS = {
   ictv:        { url: 'https://ictv.global/search/find_the_species?search_text={}&search_modifier=contains', label: 'ICTV' }
 };
 
+// TaxonWorks "throw to another filter" / radial chain support.
+// When chaining `!a > !b`, the upstream stage's params are wrapped under the
+// upstream target's `queryKey`. TW's filter classes know how to interpret
+// `<resource>_query[...]` as a sub-scope. Only filter targets (not browse /
+// new / hub / external) chain meaningfully.
+const INTERNAL_QUERY_KEYS = {
+  'sources':                     'source_query',
+  'taxon_names':                 'taxon_name_query',
+  'taxon_name_relationships':    'taxon_name_relationship_query',
+  'otus':                        'otu_query',
+  'collection_objects':          'collection_object_query',
+  'field_occurrences':           'field_occurrence_query',
+  'collecting_events':           'collecting_event_query',
+  'asserted_distributions':      'asserted_distribution_query',
+  'biological_associations':     'biological_association_query',
+  'observations':                'observation_query',
+  'descriptors':                 'descriptor_query',
+  'images':                      'image_query',
+  'sounds':                      'sound_query',
+  'people':                      'person_query',
+  'loans':                       'loan_query',
+  'extracts':                    'extract_query',
+  'anatomical_parts':            'anatomical_part_query',
+  'namespaces':                  'namespace_query',
+  'content':                     'content_query',
+  'dwc_occurrences':             'dwc_occurrence_query',
+  'annotations':                 'annotation_query'
+};
+
+// Params that the corresponding TaxonWorks filter declares as arrays
+// (`param_name: []` in the filter class PARAMS). When the user types
+// `key:value` for one of these, the parser auto-appends `[]` so they don't
+// have to type `key[]:value` or `key:value,` themselves.
+//
+// Snapshot extracted from lib/queries/<resource>/filter.rb. May need
+// refreshing when TaxonWorks adds or renames filter params; the existing
+// `key[]:value` and `key:value,` escape hatches still work for any params
+// missing from this map.
+const INTERNAL_ARRAY_PARAMS = {
+  'sources':                  new Set('author_id bibtex_type citation_object_type editor_id empty not_empty serial_id source_id taxon_name_id topic_id'.split(' ')),
+  'taxon_names':              new Set('cached collecting_event_id collection_object_id combination_taxon_name_id name otu_id parent_id rank taxon_name_author_id taxon_name_classification taxon_name_id taxon_name_relationship_type_either taxon_name_relationship_type_object taxon_name_relationship_type_subject type'.split(' ')),
+  'taxon_name_relationships': new Set('object_taxon_name_id subject_taxon_name_id taxon_name_id taxon_name_relationship_id taxon_name_relationship_set taxon_name_relationship_type'.split(' ')),
+  'otus':                     new Set('collecting_event_id descriptor_id geo_shape_id geo_shape_type name otu_id taxon_name_id'.split(' ')),
+  'collection_objects':       new Set('biocuration_class_id biological_association_id biological_relationship_id collecting_event_id collection_object_id determiner_id extract_id geographic_area_id import_dataset_id is_type loan_id otu_id preparation_type_id taxon_name_id'.split(' ')),
+  'field_occurrences':        new Set('biocuration_class_id biological_association_id collecting_event_id determiner_id field_occurrence_id otu_id taxon_name_id'.split(' ')),
+  'collecting_events':        new Set('collecting_event_id collection_object_id collector_id geo_shape_id geo_shape_type otu_id'.split(' ')),
+  'asserted_distributions':   new Set('asserted_distribution_id asserted_distribution_object_id asserted_distribution_object_type asserted_distribution_shape_type biological_association_id geo_shape_id geo_shape_type geographic_area_id geographic_item_id otu_id source_id taxon_name_id'.split(' ')),
+  'biological_associations':  new Set('anatomical_part_id any_global_id biological_association_id biological_association_object_id biological_association_object_type biological_association_subject_id biological_association_subject_type biological_associations_graph_id biological_relationship_id collecting_event_id collection_object_id field_occurrence_id geo_shape_id geo_shape_type object_biological_property_id object_object_global_id object_taxon_name_id otu_id subject_biological_property_id subject_object_global_id subject_taxon_name_id taxon_name_id'.split(' ')),
+  'observations':             new Set('charater_state_id collection_object_id descriptor_id geo_shape_id geo_shape_type observation_id observation_matrix_id observation_object_id observation_object_type observation_type otu_id sound_id taxon_name_id'.split(' ')),
+  'descriptors':              new Set('descriptor_id descriptor_type observation_matrix_id'.split(' ')),
+  'images':                   new Set('biocuration_class_id collection_object_id collection_object_scope copyright_holder_id copyright_holder_organization_id creator_id depiction_object_type editor_id field_occurrence_id field_occurrence_scope image_id license otu_id otu_scope owner_id owner_organization_id sled_image_id source_id taxon_name_id'.split(' ')),
+  'sounds':                   new Set('collecting_event_id collection_object_id conveyance_object_type field_occurrence_id otu_id otu_scope sound_id'.split(' ')),
+  'people':                   new Set('exact except_project_id except_role only_project_id person_id role with without'.split(' ')),
+  'loans':                    new Set('loan_id loan_item_disposition otu_id person_id role taxon_name_id'.split(' ')),
+  'extracts':                 new Set('collection_object_id extract_id otu_id repository_id taxon_name_id'.split(' ')),
+  'anatomical_parts':         new Set('anatomical_part_id collection_object_id field_occurrence_id origin_object_type otu_id'.split(' ')),
+  'content':                  new Set('content_id otu_id topic_id'.split(' ')),
+  'dwc_occurrences':          new Set('dwc_occurrence_id empty_rank otu_id person_id taxon_name_id'.split(' '))
+};
+
 // Unique target list (dedup'd: internal by path, external by url), sorted by label.
 // Used by the options page to populate the custom-bangs target dropdown.
 const BANG_TARGETS = (() => {
