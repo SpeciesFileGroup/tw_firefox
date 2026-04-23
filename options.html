@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>TaxonWorks Quick Filter — Options</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 1em; min-width: 520px; }
+    h2 { margin: 0 0 0.25em 0; font-size: 1.1em; }
+    .hint { color: #666; font-size: 0.85em; margin-bottom: 0.75em; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 0.3em 0.4em; text-align: left; border-bottom: 1px solid #eee; font-size: 0.9em; }
+    th { font-weight: 600; color: #444; }
+    input[type=text], input[type=url] { width: 100%; padding: 0.3em; box-sizing: border-box; font-family: inherit; }
+    td.default-col { text-align: center; width: 4em; }
+    td.remove-col  { width: 2em; text-align: center; }
+    td.alias-col   { width: 8em; }
+    section { margin-top: 1.5em; }
+    details { margin-top: 0.75em; font-size: 0.85em; color: #444; }
+    details summary { cursor: pointer; }
+    dl.builtins { display: grid; grid-template-columns: auto 1fr; gap: 0.15em 0.75em; margin: 0.5em 0 0 0.5em; }
+    dl.builtins dt { font-family: monospace; }
+    dl.builtins dd { margin: 0; }
+    button.remove { background: none; border: none; color: #a00; cursor: pointer; font-size: 1.1em; }
+    .actions { margin-top: 0.75em; display: flex; gap: 0.5em; }
+    .actions button { padding: 0.4em 0.9em; }
+    #status { margin-top: 0.5em; min-height: 1em; color: #0a0; }
+    #status.error { color: #a00; }
+  </style>
+</head>
+<body>
+  <h2>TaxonWorks instances</h2>
+  <div class="hint">
+    Use <code>@name</code> in the address bar to target a specific instance —
+    e.g. <code>tw !s @sandbox title:"new species"</code>.
+    The row marked <em>Default</em> is used when no <code>@name</code> is given.
+  </div>
+
+  <table id="hosts-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>URL</th>
+        <th class="default-col">Default</th>
+        <th class="remove-col"></th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="actions">
+    <button id="add">Add instance</button>
+    <button id="reset">Reset to defaults</button>
+    <button id="save">Save</button>
+  </div>
+  <div id="status"></div>
+
+  <section>
+    <h2>Custom bangs</h2>
+    <div class="hint">
+      Add your own aliases or override the defaults. Set the target to
+      <em>— disable —</em> to remove a built-in alias you don't want.
+      Don't include the leading <code>!</code> in the alias field.
+    </div>
+    <table id="bangs-table">
+      <thead>
+        <tr>
+          <th class="alias-col">Alias</th>
+          <th>Target</th>
+          <th class="remove-col"></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="actions">
+      <button id="add-bang">Add alias</button>
+      <button id="save-bangs">Save bangs</button>
+    </div>
+    <div id="bang-status"></div>
+
+    <details>
+      <summary>Built-in bangs (for reference)</summary>
+      <dl class="builtins" id="builtins"></dl>
+    </details>
+  </section>
+
+<script src="bangs.js"></script>
+<script src="hosts.js"></script>
+<script src="options.js"></script>
+</body>
+</html>

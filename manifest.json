@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "TaxonWorks Bang Search",
+  "version": "0.0.1",
+  "description": "Type 'tw ' in the address bar, then a bang like !s, !t, !co and key:value params to jump straight to a TaxonWorks filter task.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tw-quick-filter@taxonworks",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": ["storage", "activeTab"],
+  "background": {
+    "scripts": ["bangs.js", "hosts.js", "background.js"]
+  },
+  "omnibox": {
+    "keyword": "tw"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  }
+}
