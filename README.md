@@ -111,10 +111,10 @@ except inside double quotes.
   | (none) | Frontend | Current tab (or configured default) |
   | `\` | Frontend | New foreground tab |
   | `\\` | Frontend | New background tab |
-  | `|` | API | New foreground tab |
-  | `||` | API | New background tab |
-  | `\|` | Frontend (FG) + API (BG) — opens both | — |
-  | `|\` | API (FG) + Frontend (BG) — opens both | — |
+  | `\|` | API | New foreground tab |
+  | `\|\|` | API | New background tab |
+  | `\\|` | Frontend (FG) + API (BG) — opens both | — |
+  | `\|\` | API (FG) + Frontend (BG) — opens both | — |
 
   Mnemonic: shift up to switch destination from frontend to API. The
   marker has to be the last whitespace-separated token; values that happen
