@@ -70,27 +70,46 @@ test('parse: first @host wins if multiple', () => {
   assert.equal(parse('!t @sfg @sandbox').hostName, 'sfg');
 });
 
-test('parse: trailing | sets foreground disposition', () => {
-  const r = parse('!t Apis |');
-  assert.equal(r.disposition, 'newForegroundTab');
+test('parse: trailing \\ sets frontend FG action', () => {
+  const r = parse('!t Apis \\');
+  assert.deepEqual(r.actions, [{ destination: 'frontend', disposition: 'newForegroundTab' }]);
   assert.deepEqual(r.stages[0].rest, ['Apis']);
 });
 
-test('parse: trailing || sets background disposition', () => {
-  const r = parse('!t Apis ||');
-  assert.equal(r.disposition, 'newBackgroundTab');
+test('parse: trailing | sets API FG action', () => {
+  const r = parse('!t Apis |');
+  assert.deepEqual(r.actions, [{ destination: 'api', disposition: 'newForegroundTab' }]);
 });
 
-test('parse: non-trailing | is a regular token', () => {
+test('parse: trailing || sets API BG action', () => {
+  const r = parse('!t Apis ||');
+  assert.deepEqual(r.actions, [{ destination: 'api', disposition: 'newBackgroundTab' }]);
+});
+
+test('parse: trailing \\| sets dual-open frontend FG + API BG', () => {
+  const r = parse('!t Apis \\|');
+  assert.equal(r.actions.length, 2);
+  assert.deepEqual(r.actions[0], { destination: 'frontend', disposition: 'newForegroundTab' });
+  assert.deepEqual(r.actions[1], { destination: 'api',      disposition: 'newBackgroundTab' });
+});
+
+test('parse: trailing |\\ sets dual-open API FG + frontend BG', () => {
+  const r = parse('!t Apis |\\');
+  assert.equal(r.actions.length, 2);
+  assert.deepEqual(r.actions[0], { destination: 'api',      disposition: 'newForegroundTab' });
+  assert.deepEqual(r.actions[1], { destination: 'frontend', disposition: 'newBackgroundTab' });
+});
+
+test('parse: non-trailing | is a regular token (no marker)', () => {
   const r = parse('!t | middle');
-  assert.equal(r.disposition, null);
+  assert.equal(r.actions, null);
   assert.deepEqual(r.stages[0].rest, ['|', 'middle']);
 });
 
 test('parse: no-space-before | is not a marker', () => {
   // Apis| tokenizes as single token "Apis|"
   const r = parse('!t Apis|');
-  assert.equal(r.disposition, null);
+  assert.equal(r.actions, null);
   assert.deepEqual(r.stages[0].rest, ['Apis|']);
 });
 
@@ -112,7 +131,7 @@ test('parse: chain with @host and | (both global)', () => {
   const r = parse('!s type:book > !tn @sandbox |');
   assert.equal(r.stages.length, 2);
   assert.equal(r.hostName, 'sandbox');
-  assert.equal(r.disposition, 'newForegroundTab');
+  assert.deepEqual(r.actions, [{ destination: 'api', disposition: 'newForegroundTab' }]);
 });
 
 test('parse: < is NOT a chain operator (stays in rest)', () => {
@@ -123,11 +142,23 @@ test('parse: < is NOT a chain operator (stays in rest)', () => {
   assert.ok(r.stages[0].rest.includes('<'));
 });
 
-test('parse: external bang behaves as single stage', () => {
-  const r = parse('!col Aedes aegypti');
+test('parse: external bang uses ~ sigil', () => {
+  const r = parse('~col Aedes aegypti');
   assert.equal(r.stages.length, 1);
   assert.equal(r.stages[0].target.label, 'Catalogue of Life');
   assert.ok(r.stages[0].target.url);
+});
+
+test('parse: ! sigil rejects external alias', () => {
+  // `!col` should NOT match the Catalogue of Life external bang.
+  const r = parse('!col Aedes aegypti');
+  assert.equal(r.stages.length, 0);
+});
+
+test('parse: ~ sigil rejects internal alias', () => {
+  // `~s` should NOT match the Sources internal bang.
+  const r = parse('~s name:Apis');
+  assert.equal(r.stages.length, 0);
 });
 
 test('queryKeyFor: known internal filter', () => {

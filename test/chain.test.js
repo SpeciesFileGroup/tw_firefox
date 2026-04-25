@@ -4,9 +4,12 @@ const { loadExtension } = require('./helpers.js');
 
 const HOST = 'https://sfg.taxonworks.org';
 
+// Returns { url, error, ...rest } where `url` is the first action's URL or
+// null if there are no actions (e.g. validation error).
 async function resolve(input, opts = {}) {
   const ext = loadExtension(opts);
-  return await ext.resolveAndBuild(input);
+  const r = await ext.resolveAndBuild(input);
+  return { url: r.actions.length ? r.actions[0].url : null, ...r };
 }
 
 // -------- Basic chain URL building --------
@@ -44,10 +47,29 @@ test('chain: @host applies to destination host', async () => {
   assert.ok(r.url.startsWith('https://sandbox.taxonworks.org/tasks/taxon_names/filter'));
 });
 
-test('chain: trailing | still marks disposition', async () => {
-  const r = await resolve('!s type:book > !tn |');
-  assert.equal(r.disposition, 'newForegroundTab');
-  assert.ok(r.url.includes('source_query[type]=book'));
+test('chain: trailing | switches destination to API', async () => {
+  const r = await resolve('!s with_doi:true > !tn |');
+  // `|` now means API-destination + new foreground tab
+  assert.equal(r.actions[0].destination, 'api');
+  assert.equal(r.actions[0].disposition, 'newForegroundTab');
+  assert.ok(r.url.includes('/api/v1/taxon_names'));
+  assert.ok(r.url.includes('source_query[with_doi]=true'));
+});
+
+test('chain: trailing \\ keeps frontend destination, new tab', async () => {
+  const r = await resolve('!s with_doi:true > !tn \\');
+  assert.equal(r.actions[0].destination, 'frontend');
+  assert.equal(r.actions[0].disposition, 'newForegroundTab');
+  assert.ok(r.url.includes('/tasks/taxon_names/filter'));
+});
+
+test('chain: dual-open \\| produces both frontend and API URLs', async () => {
+  const r = await resolve('!s with_doi:true > !tn \\|');
+  assert.equal(r.actions.length, 2);
+  assert.equal(r.actions[0].destination, 'frontend');
+  assert.ok(r.actions[0].url.includes('/tasks/taxon_names/filter'));
+  assert.equal(r.actions[1].destination, 'api');
+  assert.ok(r.actions[1].url.includes('/api/v1/taxon_names'));
 });
 
 // -------- Array-param auto-bracketing in chains --------
@@ -66,7 +88,7 @@ test('chain: array param on upstream stage auto-brackets inside wrap', async () 
 // -------- Validation errors --------
 
 test('chain validation: external as destination is rejected', async () => {
-  const r = await resolve('!s type:book > !col');
+  const r = await resolve('!s type:book > ~col');
   assert.equal(r.url, null);
   assert.match(r.error || '', /External services can't receive a chain/);
 });
@@ -79,7 +101,7 @@ test('chain validation: non-filter upstream is rejected', async () => {
 });
 
 test('chain validation: external upstream is rejected', async () => {
-  const r = await resolve('!col Apis > !tn');
+  const r = await resolve('~col Apis > !tn');
   assert.equal(r.url, null);
   assert.match(r.error || '', /can't be a chain source/);
 });

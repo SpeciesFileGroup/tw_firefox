@@ -1,9 +1,9 @@
 # TaxonWorks Quick Filter
 
-A Firefox address-bar extension that jumps you straight to a TaxonWorks filter
-task — and, while you're at it, to any of ~35 biodiversity-informatics
-services that you might reference during the same session. Type `tw`, a space,
-a bang, and any `key:value` params — hit Enter.
+A Firefox address-bar extension that jumps you straight to a TaxonWorks
+filter task — and, while you're at it, to any of ~35 biodiversity-informatics
+services that you might reference during the same session. Type `tw`, a
+space, a bang, and any `key:value` params — hit Enter.
 
 ```
 tw !s title:"A new species" year_start:2020 author_id:1,2
@@ -12,6 +12,13 @@ tw !s title:"A new species" year_start:2020 author_id:1,2
     │                 └── namespaced params (any key the filter accepts)
     └── bang picks the filter task (sources, here)
 ```
+
+Two sigils:
+
+- **`!`** for TaxonWorks targets (filter tasks, browse pages, hubs, new-record
+  forms). Example: `!s` (Sources filter), `!bt` (Browse taxonomy).
+- **`~`** for external biodiversity-informatics services. Example: `~col`
+  (Catalogue of Life), `~gbif` (GBIF), `~doi` (DOI resolver).
 
 The extension builds the right URL and opens
 `/tasks/sources/filter?title=A+new+species&year_start=2020&author_id[]=1&author_id[]=2`
@@ -26,14 +33,15 @@ on your configured TaxonWorks instance.
 | `tw !s new species 2020`             | Sources filter, bare terms → `query_term=...`     |
 | `tw co! @dev`                        | Collection objects on localhost — suffix bang OK  |
 | `tw !ba subject_taxon_name_id:1234`  | Biological associations                           |
-| `tw !col Aedes aegypti`              | Catalogue of Life search                          |
-| `tw !clb datasetKey:3LR Trifolium`   | ChecklistBank query pinned to a dataset           |
-| `tw !orcid Guralnick`                | ORCID people search                               |
-| `tw !bn "Smith, J."`                 | Bionomia roster search                            |
-| `tw !doi 10.1234/abcd`               | Resolve a DOI via `dx.doi.org`                    |
-| `tw !gnp Aedes aegypti L.`           | GN Parser (with details)                          |
-| `tw !t Apis \|`                      | Open taxon names filter in a new tab              |
-| `tw !col Aedes aegypti \|\|`         | Open CoL result in a new **background** tab       |
+| `tw ~col Aedes aegypti`              | Catalogue of Life search (external — `~` sigil)   |
+| `tw ~clb datasetKey:3LR Trifolium`   | ChecklistBank query pinned to a dataset           |
+| `tw ~orcid Guralnick`                | ORCID people search                               |
+| `tw ~bn "Smith, J."`                 | Bionomia roster search                            |
+| `tw ~doi 10.1234/abcd`               | Resolve a DOI via `dx.doi.org`                    |
+| `tw ~gnp Aedes aegypti L.`           | GN Parser (with details)                          |
+| `tw !t Apis \`                       | Frontend in a new tab                             |
+| `tw !t Apis ||`                      | API view in a new background tab                  |
+| `tw !t Apis \|`                      | Both: frontend in new tab + API in new bg tab     |
 | `tw !sel 50`                         | Switch to project 50 (rawPath `{}` substitution)  |
 
 ## Installing (temporary / development)
@@ -88,14 +96,30 @@ except inside double quotes.
     full-text match.
   - External services → substituted into the `{}` placeholder in the service's
     URL template.
-- **Tab-disposition markers** — a trailing ` |` (space then pipe) forces the
-  result into a new foreground tab; trailing ` ||` forces a new background
-  tab (current tab keeps focus). The marker must be the last whitespace-
-  separated token in the query; values like `foo|bar` or `Apis||` (no
-  preceding space) are treated as regular content, so there's no collision
-  with query values that happen to contain `|`. `|` is Shift+Backslash on a
-  US layout, directly above Enter, so no hand movement between completing
-  the query and marking the disposition. Overrides both the key-modifier
+- **Bang sigils** — `!` for TaxonWorks targets (filter / browse / new / hub),
+  `~` for external services. Either prefix or suffix: `!s`, `s!`, `~col`,
+  `col~`. Cross-sigil mismatch (e.g. `!col` for the external Catalogue of
+  Life bang, or `~s` for the internal Sources bang) doesn't match — by
+  design, so the syntax tells you whether the destination is TW or
+  third-party.
+- **Trailing tab markers** — a trailing whitespace-separated token at the
+  end of the query controls where the result opens. Six markers, all on
+  the same physical key (`\`/`|`):
+
+  | Marker | Destination | Disposition |
+  | --- | --- | --- |
+  | (none) | Frontend | Current tab (or configured default) |
+  | `\` | Frontend | New foreground tab |
+  | `\\` | Frontend | New background tab |
+  | `|` | API | New foreground tab |
+  | `||` | API | New background tab |
+  | `\|` | Frontend (FG) + API (BG) — opens both | — |
+  | `|\` | API (FG) + Frontend (BG) — opens both | — |
+
+  Mnemonic: shift up to switch destination from frontend to API. The
+  marker has to be the last whitespace-separated token; values that happen
+  to contain `\` or `|` (e.g. `foo|bar` or `Apis\\`) are regular content,
+  so there's no collision. Markers override both the key-modifier
   behavior (Alt+Enter, etc.) and the configured default below.
 
 ## Filter chains
@@ -132,7 +156,7 @@ filter conditions as nested sub-scopes that TW evaluates server-side.
 | Collection objects whose taxon was described in a book | `tw !s bibtex_type:book > !tn > !otu > !co` |
 | Asserted distributions for taxa described since 2020 | `tw !s year_start:2020 > !tn > !ad` |
 | Biological associations involving a specific subject taxon | `tw !t name:Apis > !ba` |
-| Same as above, but on sandbox, open in a background tab | `tw !t name:Apis > !ba @sandbox \|\|` |
+| Same as above, on sandbox, opened in a frontend background tab | `tw !t name:Apis > !ba @sandbox \\` |
 
 ### Multi-stage nesting
 
@@ -189,19 +213,25 @@ chain URLs match its wrapping byte-for-byte.
 
 ### Chain-global modifiers
 
-`@host` and the trailing tab marker (`|` / `||`) apply to the whole chain,
-regardless of where you put them:
+`@host` and the trailing tab marker (`\`, `\\`, `|`, `||`, `\|`, `|\`) apply
+to the whole chain, regardless of where you put them. Examples:
 
 ```
-tw !s bibtex_type:book > !tn @sandbox |
-  → opens the chained taxon-names URL on @sandbox in a new foreground tab
+tw !s bibtex_type:book > !tn @sandbox \
+  → chained taxon-names URL on @sandbox, opened in a new foreground frontend tab
+
+tw !s bibtex_type:book > !tn |
+  → same chain, opened to the API endpoint instead of the UI
+
+tw !s bibtex_type:book > !tn \|
+  → opens both: frontend (foreground) and API (background)
 ```
 
 **What can chain into what?** Any filter bang can be a stage source as long as
 TW's destination filter accepts the upstream's `<resource>_query` sub-scope —
 in practice, almost all filter pairs work because TW's filter classes share a
 generalized cross-resource query mechanism. External-service bangs (e.g.
-`!col`, `!gbif`) and non-filter bangs (browse, new, hub) cannot be chain
+`~col`, `~gbif`) and non-filter bangs (browse, new, hub) cannot be chain
 sources or destinations — the omnibox suggestion will surface a warning if
 you try.
 
@@ -213,15 +243,25 @@ multi-clause chains stacked across several stages.
 
 ## Tab behavior
 
-By default, pressing plain Enter opens the result in the current tab. You can
-change this in the options page — pick one of **Current tab**, **New tab**,
-or **New background tab**. The full precedence is:
+By default, pressing plain Enter (no marker) opens the result in the
+current tab. You can change this in the options page — pick one of
+**Current tab**, **New tab**, or **New background tab**. The full
+precedence is:
 
-1. **Query marker** — `|` or `||` in the typed query wins.
+1. **Trailing markers** (see Syntax above) — explicit `\`, `\\`, `|`, `||`,
+   `\|`, or `|\` always wins, including which destination (frontend vs API)
+   the result opens in. Dual-open markers (`\|` / `|\`) open two tabs;
+   their dispositions are explicit (one FG, one BG) and ignore the items
+   below.
 2. **Modifier-key gesture** — if Firefox hands us an explicit disposition
-   (Alt+Enter, Ctrl+Alt+Enter, middle-click), that wins.
+   (Alt+Enter, Ctrl+Alt+Enter, middle-click), that wins for the
+   single-action case.
 3. **Configured default** — the options-page setting above.
 4. **Fallback** — current tab.
+
+The destination (frontend filter UI vs `/api/v1/...` endpoint) is only
+controllable via the trailing markers — there's no "default destination"
+preference. Most queries default to the frontend.
 
 ## TaxonWorks filter bangs
 
@@ -253,93 +293,95 @@ Don't like a bang? See **Custom bangs** below.
 
 ## External service bangs
 
-These don't touch a TaxonWorks instance — they're convenience pass-throughs to
-biodiversity-informatics services you might reference while working in a
-project. Bare terms form the query string (substituted into `{}` in the URL
-template); `key:value` tokens are appended as extra URL parameters, so you can
-pin a dataset or filter if the destination service supports it. `@instance`
-is ignored for external bangs.
+These use the **`~` sigil** instead of `!` — they don't touch a TaxonWorks
+instance, they're convenience pass-throughs to biodiversity-informatics
+services. The split sigil makes it visually obvious whether a bang
+targets your TW project or an outside service. Bare terms form the query
+string (substituted into `{}` in the URL template); `key:value` tokens are
+appended as extra URL parameters, so you can pin a dataset or filter if
+the destination service supports it. `@instance` is ignored for external
+bangs.
 
-Example: `tw !clb datasetKey:3LR Trifolium` →
+Example: `tw ~clb datasetKey:3LR Trifolium` →
 `https://www.checklistbank.org/nameusage/search?q=Trifolium&datasetKey=3LR`
 
 ### Nomenclature & taxonomy
 
 | Bang(s)                                 | Service                        |
 | --------------------------------------- | ------------------------------ |
-| `!iczn`                                 | ICZN                           |
-| `!ictv`                                 | ICTV                           |
-| `!zb`                                   | ZooBank                        |
-| `!ipni`                                 | IPNI                           |
-| `!pow`                                  | Plants of the World (Kew)      |
-| `!trop` / `!tropicos`                   | Tropicos                       |
-| `!sn` / `!scalenet`                     | ScaleNet                       |
-| `!wsc` / `!spider`                      | World Spider Catalog           |
-| `!wikispecies`                          | Wikispecies                    |
+| `~iczn`                                 | ICZN                           |
+| `~ictv`                                 | ICTV                           |
+| `~zb`                                   | ZooBank                        |
+| `~ipni`                                 | IPNI                           |
+| `~pow`                                  | Plants of the World (Kew)      |
+| `~trop` / `~tropicos`                   | Tropicos                       |
+| `~sn` / `~scalenet`                     | ScaleNet                       |
+| `~wsc` / `~spider`                      | World Spider Catalog           |
+| `~wikispecies`                          | Wikispecies                    |
 
 ### Checklists & catalogues
 
 | Bang(s)       | Service            |
 | ------------- | ------------------ |
-| `!col`        | Catalogue of Life  |
-| `!clb`        | ChecklistBank      |
-| `!eol`        | Encyclopedia of Life |
+| `~col`        | Catalogue of Life  |
+| `~clb`        | ChecklistBank      |
+| `~eol`        | Encyclopedia of Life |
 
 ### Occurrence data
 
 | Bang(s)   | Service                       |
 | --------- | ----------------------------- |
-| `!gbif`   | GBIF species                  |
-| `!idig`   | iDigBio                       |
-| `!vernet` | VertNet                       |
-| `!inat`   | iNaturalist                   |
-| `!obis`   | OBIS                          |
-| `!ala`    | Atlas of Living Australia     |
+| `~gbif`   | GBIF species                  |
+| `~idig`   | iDigBio                       |
+| `~vernet` | VertNet                       |
+| `~inat`   | iNaturalist                   |
+| `~obis`   | OBIS                          |
+| `~ala`    | Atlas of Living Australia     |
 
 ### Molecular & specimen
 
 | Bang    | Service      |
 | ------- | ------------ |
-| `!bold` | BOLD Systems |
+| `~bold` | BOLD Systems |
 
 ### People, institutions & attribution
 
 | Bang    | Service   |
 | ------- | --------- |
-| `!orcid`| ORCID     |
-| `!bn`   | Bionomia (roster search) |
-| `!ror`  | ROR       |
+| `~orcid`| ORCID     |
+| `~bn`   | Bionomia (roster search) |
+| `~ror`  | ROR       |
 
 ### Literature & citations
 
 | Bang(s)                                 | Service                             |
 | --------------------------------------- | ----------------------------------- |
-| `!bhl`                                  | Biodiversity Heritage Library       |
-| `!plazi`                                | Plazi TreatmentBank                 |
-| `!pubmed`                               | PubMed                              |
-| `!gs` / `!scholar`                      | Google Scholar                      |
-| `!crossref`                             | Crossref                            |
-| `!doi`                                  | DOI resolver (`dx.doi.org`)         |
-| `!alex` / `!oa` / `!openalex`           | OpenAlex                            |
-| `!wos`                                  | Web of Science                      |
+| `~bhl`                                  | Biodiversity Heritage Library       |
+| `~plazi`                                | Plazi TreatmentBank                 |
+| `~pubmed`                               | PubMed                              |
+| `~gs` / `~scholar`                      | Google Scholar                      |
+| `~crossref`                             | Crossref                            |
+| `~doi`                                  | DOI resolver (`dx.doi.org`)         |
+| `~alex` / `~oa` / `~openalex`           | OpenAlex                            |
+| `~wos`                                  | Web of Science                      |
 
 ### Data repositories
 
 | Bang(s)               | Service |
 | --------------------- | ------- |
-| `!dryad`              | Dryad   |
-| `!zen` / `!zenodo`    | Zenodo  |
+| `~dryad`              | Dryad   |
+| `~zen` / `~zenodo`    | Zenodo  |
 
 ### Scientific-name parsing & verification
 
 | Bang(s)                                 | Service                           |
 | --------------------------------------- | --------------------------------- |
-| `!gnp` / `!gnparser`                    | Global Names Parser (HTML output) |
-| `!gnv` / `!gnverify` / `!gnverifier`    | Global Names Verifier             |
+| `~gnp` / `~gnparser`                    | Global Names Parser (HTML output) |
+| `~gnv` / `~gnverify` / `~gnverifier`    | Global Names Verifier             |
 
 ## Example suggestions in the dropdown
 
-If you type a bang with no further query (e.g. `tw !col`), the omnibox
+If you type a bang with no further query (e.g. `tw ~col`), the omnibox
 dropdown shows canned example queries for that service — picking one with
 arrow-keys + Enter fills in a working query. Examples are seeded for a
 handful of services where the URL structure or query format isn't obvious
@@ -403,7 +445,7 @@ The extension itself sends no data anywhere — no telemetry, no analytics,
 no auto-updates pinging home. But the whole point of the bangs is to open
 URLs, so:
 
-- **External-service bangs** (e.g. `!col`, `!gbif`, `!doi`) send your query
+- **External-service bangs** (e.g. `~col`, `~gbif`, `~doi`) send your query
   to that service over TLS. Same as if you'd typed the query into the
   service's own search box.
 - **TaxonWorks bangs** send your filter params to whichever TaxonWorks

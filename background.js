@@ -40,12 +40,25 @@ function stripQuotes(s) {
   return s;
 }
 
+// Sigil-aware bang matching:
+//   !key / key!  → internal TaxonWorks targets (path / fullPath / rawPath)
+//   ~key / key~  → external service targets (url template)
+// The split prevents confusion when an alias has both an internal and an
+// external meaning (rare, but the namespace is shared) and signals intent.
 function matchBang(token) {
   let key = null;
-  if (token.startsWith('!')) key = token.slice(1);
-  else if (token.endsWith('!')) key = token.slice(0, -1);
+  let kind = null;
+  if      (token.startsWith('!')) { key = token.slice(1);    kind = 'internal'; }
+  else if (token.endsWith('!'))   { key = token.slice(0, -1); kind = 'internal'; }
+  else if (token.startsWith('~')) { key = token.slice(1);    kind = 'external'; }
+  else if (token.endsWith('~'))   { key = token.slice(0, -1); kind = 'external'; }
   if (!key) return null;
-  return ACTIVE_BANGS[key.toLowerCase()] || null;
+
+  const target = ACTIVE_BANGS[key.toLowerCase()];
+  if (!target) return null;
+  if (kind === 'internal' && target.url) return null;  // ! used on external alias
+  if (kind === 'external' && !target.url) return null; // ~ used on internal alias
+  return target;
 }
 
 function matchInstance(token) {
@@ -68,20 +81,45 @@ function parseStage(tokens) {
   return { target, bangToken, rest };
 }
 
+// Trailing-marker family. The marker (if present) must be the last
+// whitespace-separated token. Each entry is the list of (destination,
+// disposition) tab actions to take. A list of length 2 means "open both
+// tabs"; the first entry gets focus.
+//   \   → frontend, new foreground tab
+//   \\  → frontend, new background tab
+//   |   → API, new foreground tab
+//   ||  → API, new background tab
+//   \|  → frontend (FG) + API (BG)
+//   |\  → API (FG) + frontend (BG)
+const TAB_MARKERS = {
+  '\\':   [{ destination: 'frontend', disposition: 'newForegroundTab' }],
+  '\\\\': [{ destination: 'frontend', disposition: 'newBackgroundTab' }],
+  '|':    [{ destination: 'api',      disposition: 'newForegroundTab' }],
+  '||':   [{ destination: 'api',      disposition: 'newBackgroundTab' }],
+  '\\|':  [
+    { destination: 'frontend', disposition: 'newForegroundTab' },
+    { destination: 'api',      disposition: 'newBackgroundTab' }
+  ],
+  '|\\':  [
+    { destination: 'api',      disposition: 'newForegroundTab' },
+    { destination: 'frontend', disposition: 'newBackgroundTab' }
+  ]
+};
+
 // Splits the omnibox input into chain stages. The "throw" operator is `>`
 // (Unix-style output redirection — read left-to-right as "send result of A
-// to B"). Host (@name) and disposition markers (trailing `|` / `||`) are
-// stripped at the whole-query level.
+// to B"). Host (@name) and trailing tab markers are stripped at the
+// whole-query level.
 //
-// Returns: { stages: [{target,bangToken,rest},...], hostName, disposition,
-//            destBangToken }
+// Returns: { stages: [{target,bangToken,rest},...], hostName, actions,
+//            destBangToken }  where `actions` is null (use defaults) or a
+// list of (destination, disposition) pairs from TAB_MARKERS.
 function parse(input) {
   const tokens = tokenize(input.trim());
-  let disposition = null;
+  let actions = null;
 
   const last = tokens[tokens.length - 1];
-  if (last === '|')       { disposition = 'newForegroundTab'; tokens.pop(); }
-  else if (last === '||') { disposition = 'newBackgroundTab'; tokens.pop(); }
+  if (TAB_MARKERS[last]) { actions = TAB_MARKERS[last]; tokens.pop(); }
 
   // Pull out @host (first occurrence wins) before splitting so it can sit
   // anywhere in the chain.
@@ -102,7 +140,7 @@ function parse(input) {
 
   const stages = stageTokens.map(parseStage).filter(s => s.target);
   const destBangToken = stages.length ? stages[stages.length - 1].bangToken : null;
-  return { stages, hostName, disposition, destBangToken };
+  return { stages, hostName, actions, destBangToken };
 }
 
 function queryKeyFor(target) {
@@ -264,67 +302,109 @@ function buildChainQueryString(stages) {
   return parts.join('&');
 }
 
+// Build the URL for a single (stages, destination) pair. `destination` is
+// either 'frontend' (default) or 'api'. Returns a string URL, or null if
+// the destination doesn't apply (e.g. API requested for a non-filter
+// target).
+function buildForDestination(hostUrl, stages, destination) {
+  const dest = stages[stages.length - 1].target;
+
+  // External bangs are frontend-only by nature — there is no API equivalent.
+  if (dest.url) {
+    if (destination === 'api') return null;
+    return buildExternalUrl(dest, stages[0].rest);
+  }
+
+  const base = hostUrl.replace(/\/+$/, '');
+
+  if (destination === 'api') {
+    // API path only meaningful for `path`-shaped filter targets.
+    if (!dest.path) return null;
+    const apiBase = `${base}/api/v1/${dest.path}`;
+    if (stages.length === 1) {
+      const qs = paramsFor(stages[0].rest, dest)
+        .map(([k, v]) => encodeParamPair('', k, v)).join('&');
+      return qs ? `${apiBase}?${qs}` : apiBase;
+    }
+    const qs = buildChainQueryString(stages);
+    return qs ? `${apiBase}?${qs}` : apiBase;
+  }
+
+  // Frontend (default). Same as the previous resolveAndBuild behavior.
+  if (stages.length === 1) {
+    const params = paramsFor(stages[0].rest, dest);
+    return buildInternalUrl(hostUrl, dest, params);
+  }
+  const subPath = dest.fullPath || `${dest.path}/filter`;
+  const path = dest.rawPath ? dest.rawPath : `/tasks/${subPath}`;
+  const qs = buildChainQueryString(stages);
+  return qs ? `${base}${path}?${qs}` : `${base}${path}`;
+}
+
 async function resolveAndBuild(input) {
-  const { stages, hostName, disposition, destBangToken } = parse(input);
+  const { stages, hostName, actions, destBangToken } = parse(input);
   if (!stages.length) {
-    return { url: null, target: null, host: null, note: null, source: null, disposition: null, error: null };
+    return { actions: [], target: null, host: null, note: null, source: null, error: null };
   }
 
   const dest = stages[stages.length - 1].target;
 
-  // External bangs can only stand alone — they don't accept TW-wrapped
-  // queries from upstream, and they have no queryKey to be wrapped under.
+  // Chain validation (unchanged).
   if (stages.length > 1) {
     if (dest.url) {
-      return { url: null, target: dest, host: null, note: null, source: null, disposition,
+      return { actions: [], target: dest, host: null, note: null, source: null,
                error: 'External services can\'t receive a chain' };
     }
     for (let i = 0; i < stages.length - 1; i++) {
       if (!queryKeyFor(stages[i].target)) {
-        return { url: null, target: dest, host: null, note: null, source: null, disposition,
+        return { actions: [], target: dest, host: null, note: null, source: null,
                  error: `Bang "${stages[i].bangToken}" can't be a chain source` };
       }
     }
   }
 
-  // Single-stage path: matches the previous resolveAndBuild behavior.
-  if (stages.length === 1) {
-    if (dest.url) {
-      return { url: buildExternalUrl(dest, stages[0].rest), target: dest, host: null, note: null, source: null, disposition, error: null };
-    }
+  // Resolve host (only used for non-external destinations).
+  let host = null, note = null, source = null;
+  if (!dest.url) {
     const hosts = await loadHosts();
     const origin = await getActiveTabOrigin();
     const autoDetected = matchHostByOrigin(hosts, origin);
-    const { host, note, source } = resolveHost(hosts, hostName, autoDetected);
-    const params = paramsFor(stages[0].rest, dest);
-    return { url: buildInternalUrl(host.url, dest, params), target: dest, host, note, source, disposition, error: null };
+    ({ host, note, source } = resolveHost(hosts, hostName, autoDetected));
   }
 
-  // Chain path: dest is internal, all upstream stages have queryKeys.
-  const hosts = await loadHosts();
-  const origin = await getActiveTabOrigin();
-  const autoDetected = matchHostByOrigin(hosts, origin);
-  const { host, note, source } = resolveHost(hosts, hostName, autoDetected);
+  // Default actions: frontend at unspecified disposition (filled in by the
+  // entered handler from key gesture / configured default / current tab).
+  const requested = actions || [{ destination: 'frontend', disposition: null }];
 
-  const base = host.url.replace(/\/+$/, '');
-  const subPath = dest.fullPath || `${dest.path}/filter`;
-  const path = dest.rawPath ? dest.rawPath : `/tasks/${subPath}`;
-  const qs = buildChainQueryString(stages);
-  const url = qs ? `${base}${path}?${qs}` : `${base}${path}`;
-  return { url, target: dest, host, note, source, disposition, error: null };
+  const built = [];
+  for (const req of requested) {
+    const url = buildForDestination(host ? host.url : '', stages, req.destination);
+    if (url) built.push({ url, destination: req.destination, disposition: req.disposition });
+  }
+  return { actions: built, target: dest, host, note, source, error: null };
 }
 
 browser.omnibox.setDefaultSuggestion({
-  description: 'TaxonWorks filter — e.g. !t name:Apis, !co year:2020 @sandbox, or !col Aedes aegypti'
+  description: 'TaxonWorks: !t name:Apis (TW filter), !co year:2020 @sandbox, ~col Aedes aegypti (external service)'
 });
 
 browser.omnibox.onInputChanged.addListener(async (input, suggest) => {
-  const { stages, hostName, disposition, destBangToken } = parse(input);
+  const { stages, hostName, actions, destBangToken } = parse(input);
   const suggestions = [];
 
-  const dispTag = disposition === 'newForegroundTab' ? '  ↗ new tab'
-                : disposition === 'newBackgroundTab' ? '  ↘ new bg tab'
-                : '';
+  // Compact tag describing the trailing-marker actions, if any.
+  function dispTagFor(acts) {
+    if (!acts) return '';
+    const parts = acts.map(a => {
+      const dest = a.destination === 'api' ? 'API' : 'frontend';
+      const d = a.disposition === 'newForegroundTab' ? '↗ new tab'
+              : a.disposition === 'newBackgroundTab' ? '↘ new bg tab'
+              : '';
+      return `${d} ${dest}`.trim();
+    });
+    return '  ' + parts.join(' + ');
+  }
+  const dispTag = dispTagFor(actions);
 
   // Friendly nudge: if the user typed `<` between bangs (probably meant `>`),
   // offer the corrected version as a separate dropdown row. No auto-correct.
@@ -403,12 +483,17 @@ browser.omnibox.onInputChanged.addListener(async (input, suggest) => {
     const seen = new Set();
     const lower = input.trim().toLowerCase();
     for (const [key, info] of Object.entries(ACTIVE_BANGS)) {
-      const dedupKey = info.path ? `p:${info.path}` : `u:${info.url}`;
+      const dedupKey = info.path
+        ? `p:${info.path}`
+        : info.fullPath ? `f:${info.fullPath}`
+        : info.rawPath ? `r:${info.rawPath}`
+        : `u:${info.url}`;
       if (seen.has(dedupKey)) continue;
       if (!lower || key.startsWith(lower) || info.label.toLowerCase().includes(lower)) {
+        const sigil = info.url ? '~' : '!';
         suggestions.push({
-          content: `!${key}`,
-          description: `!${key}  →  ${info.label}`
+          content: `${sigil}${key}`,
+          description: `${sigil}${key}  →  ${info.label}`
         });
         seen.add(dedupKey);
       }
@@ -419,27 +504,25 @@ browser.omnibox.onInputChanged.addListener(async (input, suggest) => {
 });
 
 browser.omnibox.onInputEntered.addListener(async (input, keyDisposition) => {
-  const { url, disposition: override } = await resolveAndBuild(input);
-  if (!url) return;
+  const { actions } = await resolveAndBuild(input);
+  if (!actions.length) return;
 
-  // Precedence:
-  //   1. User-typed `+` / `++` marker.
-  //   2. Explicit modifier-key gesture (anything other than plain Enter).
-  //   3. Configured default (user preference).
-  //   4. Fallback: current tab.
+  // For each action, resolve its disposition. Explicit per-action
+  // disposition (set by trailing markers) wins. For default-actions where
+  // disposition is null, fall back to: modifier-key gesture > configured
+  // default > current tab.
   const { defaultDisposition } = await browser.storage.local.get('defaultDisposition');
-  let disposition;
-  if (override) {
-    disposition = override;
-  } else if (keyDisposition && keyDisposition !== 'currentTab') {
-    disposition = keyDisposition;
-  } else {
-    disposition = defaultDisposition || 'currentTab';
-  }
-  switch (disposition) {
-    case 'newForegroundTab': await browser.tabs.create({ url }); break;
-    case 'newBackgroundTab': await browser.tabs.create({ url, active: false }); break;
-    case 'currentTab':
-    default:                 await browser.tabs.update({ url }); break;
+  const fallback = (keyDisposition && keyDisposition !== 'currentTab')
+    ? keyDisposition
+    : (defaultDisposition || 'currentTab');
+
+  for (const { url, disposition: explicit } of actions) {
+    const disposition = explicit || fallback;
+    switch (disposition) {
+      case 'newForegroundTab': await browser.tabs.create({ url }); break;
+      case 'newBackgroundTab': await browser.tabs.create({ url, active: false }); break;
+      case 'currentTab':
+      default:                 await browser.tabs.update({ url }); break;
+    }
   }
 });

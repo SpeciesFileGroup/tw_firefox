@@ -35,6 +35,21 @@ URL builders, omnibox handlers, live overrides merge), `options.html` +
 - **External bangs ignore `@host` by design.** Host resolution only applies
   to internal (TW filter) targets. Don't change this without a reason.
 
+- **Sigil split: `!` for internal, `~` for external.** `matchBang` filters
+  by target shape — `!key` matches only internal targets (`path` /
+  `fullPath` / `rawPath`), `~key` matches only external targets (`url`).
+  Cross-sigil mismatch returns null. Don't accept either sigil for either
+  kind — the split is the whole point (signals destination clearly,
+  prevents confusion when an alias has both meanings).
+
+- **Trailing tab markers control destination AND disposition.** Six
+  markers — `\` `\\` `|` `||` `\|` `|\` — encoded in `TAB_MARKERS` at the
+  top of `parse()`. Backslash variants → frontend, pipe variants → API,
+  doubled = background tab, mixed = open both. `parse()` returns
+  `actions: [{destination, disposition}, ...]` (length 2 for dual-open).
+  `resolveAndBuild` returns `actions: [{url, destination, disposition},
+  ...]` and `onInputEntered` iterates to open one or two tabs.
+
 - **Internal bang `key:value` → `key=value`; comma-values → `key[]=...`.**
   Rails array convention. External bangs pass `key:value` through as-is and
   do not expand commas (most non-Rails services don't use the `[]` suffix).

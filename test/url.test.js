@@ -4,12 +4,13 @@ const { loadExtension } = require('./helpers.js');
 
 const HOST = 'https://sfg.taxonworks.org';
 
-// Helper: run resolveAndBuild with a given input and optional sandbox config,
-// return just the URL for easy asserting.
+// Helper: run resolveAndBuild and return the first action's URL.
+// `resolveAndBuild` now returns { actions: [{url, destination, disposition}, ...] }.
+// For test cases without explicit trailing markers, exactly one action exists.
 async function url(input, opts = {}) {
   const ext = loadExtension(opts);
   const r = await ext.resolveAndBuild(input);
-  return r.url;
+  return r.actions.length ? r.actions[0].url : null;
 }
 
 // -------- Internal filter URLs (path → /tasks/<path>/filter) --------
@@ -131,35 +132,35 @@ test('rawPath: !project alias of !sel', async () => {
 
 test('external: simple query', async () => {
   assert.equal(
-    await url('!col Aedes aegypti'),
+    await url('~col Aedes aegypti'),
     'https://www.catalogueoflife.org/data/search?q=Aedes%20aegypti'
   );
 });
 
 test('external: key:value extras appended', async () => {
   assert.equal(
-    await url('!clb datasetKey:3LR Trifolium'),
+    await url('~clb datasetKey:3LR Trifolium'),
     'https://www.checklistbank.org/nameusage/search?q=Trifolium&datasetKey=3LR'
   );
 });
 
 test('external: path-placeholder template (ScaleNet)', async () => {
   assert.equal(
-    await url('!sn Coccus rusci'),
+    await url('~sn Coccus rusci'),
     'https://scalenet.info/catalogue/Coccus%20rusci'
   );
 });
 
 test('external: quoted comma-containing value encodes verbatim', async () => {
   assert.equal(
-    await url('!bn "Smith, J."'),
+    await url('~bn "Smith, J."'),
     'https://bionomia.net/roster?q=Smith%2C%20J.'
   );
 });
 
 test('external: @host is ignored for external bangs', async () => {
   assert.equal(
-    await url('!col @sandbox Aedes'),
+    await url('~col @sandbox Aedes'),
     'https://www.catalogueoflife.org/data/search?q=Aedes'
   );
 });
@@ -177,49 +178,100 @@ test('host: @name fallback when unknown', async () => {
   const ext = loadExtension();
   const r = await ext.resolveAndBuild('!t @nonexistent name:Apis');
   // Falls back to default (sfg) and surfaces a note
-  assert.ok(r.url.startsWith(`${HOST}/tasks/taxon_names/filter`));
+  assert.ok(r.actions[0].url.startsWith(`${HOST}/tasks/taxon_names/filter`));
   assert.match(r.note || '', /Unknown instance/);
 });
 
 test('host: auto-detect from active tab when no @name', async () => {
-  const url = await (async () => {
-    const ext = loadExtension({ activeTabUrl: 'https://sandblaster.taxonworks.org/tasks/sources/index' });
-    const r = await ext.resolveAndBuild('!t name:Apis');
-    return r.url;
-  })();
-  assert.ok(url.startsWith('https://sandblaster.taxonworks.org/'));
+  const ext = loadExtension({ activeTabUrl: 'https://sandblaster.taxonworks.org/tasks/sources/index' });
+  const r = await ext.resolveAndBuild('!t name:Apis');
+  assert.ok(r.actions[0].url.startsWith('https://sandblaster.taxonworks.org/'));
 });
 
 test('host: explicit @name beats active-tab auto-detect', async () => {
   const ext = loadExtension({ activeTabUrl: 'https://sandblaster.taxonworks.org/tasks/sources/index' });
   const r = await ext.resolveAndBuild('!t @dev name:Apis');
-  assert.ok(r.url.startsWith('http://localhost:3000/'));
+  assert.ok(r.actions[0].url.startsWith('http://localhost:3000/'));
 });
 
-// -------- Disposition markers --------
+// -------- Trailing markers --------
 
-test('disposition: | marker returns newForegroundTab', async () => {
+test('marker `\\`: frontend, new foreground tab', async () => {
+  const ext = loadExtension();
+  const r = await ext.resolveAndBuild('!t Apis \\');
+  assert.equal(r.actions.length, 1);
+  assert.equal(r.actions[0].destination, 'frontend');
+  assert.equal(r.actions[0].disposition, 'newForegroundTab');
+  assert.ok(r.actions[0].url.includes('/tasks/taxon_names/filter'));
+});
+
+test('marker `\\\\`: frontend, new background tab', async () => {
+  const ext = loadExtension();
+  const r = await ext.resolveAndBuild('!t Apis \\\\');
+  assert.equal(r.actions[0].destination, 'frontend');
+  assert.equal(r.actions[0].disposition, 'newBackgroundTab');
+});
+
+test('marker `|`: API, new foreground tab', async () => {
   const ext = loadExtension();
   const r = await ext.resolveAndBuild('!t Apis |');
-  assert.equal(r.disposition, 'newForegroundTab');
+  assert.equal(r.actions[0].destination, 'api');
+  assert.equal(r.actions[0].disposition, 'newForegroundTab');
+  assert.ok(r.actions[0].url.includes('/api/v1/taxon_names'));
 });
 
-test('disposition: || marker returns newBackgroundTab', async () => {
+test('marker `||`: API, new background tab', async () => {
   const ext = loadExtension();
   const r = await ext.resolveAndBuild('!t Apis ||');
-  assert.equal(r.disposition, 'newBackgroundTab');
+  assert.equal(r.actions[0].destination, 'api');
+  assert.equal(r.actions[0].disposition, 'newBackgroundTab');
+  assert.ok(r.actions[0].url.includes('/api/v1/taxon_names'));
 });
 
-test('disposition: no marker returns null', async () => {
+test('marker `\\|`: dual-open, frontend FG + API BG', async () => {
+  const ext = loadExtension();
+  const r = await ext.resolveAndBuild('!t Apis \\|');
+  assert.equal(r.actions.length, 2);
+  assert.equal(r.actions[0].destination, 'frontend');
+  assert.equal(r.actions[0].disposition, 'newForegroundTab');
+  assert.equal(r.actions[1].destination, 'api');
+  assert.equal(r.actions[1].disposition, 'newBackgroundTab');
+});
+
+test('marker `|\\`: dual-open, API FG + frontend BG', async () => {
+  const ext = loadExtension();
+  const r = await ext.resolveAndBuild('!t Apis |\\');
+  assert.equal(r.actions.length, 2);
+  assert.equal(r.actions[0].destination, 'api');
+  assert.equal(r.actions[0].disposition, 'newForegroundTab');
+  assert.equal(r.actions[1].destination, 'frontend');
+  assert.equal(r.actions[1].disposition, 'newBackgroundTab');
+});
+
+test('no marker: single frontend action with null disposition', async () => {
   const ext = loadExtension();
   const r = await ext.resolveAndBuild('!t Apis');
-  assert.equal(r.disposition, null);
+  assert.equal(r.actions.length, 1);
+  assert.equal(r.actions[0].destination, 'frontend');
+  assert.equal(r.actions[0].disposition, null);
+});
+
+test('API destination rejects external bang (no API equivalent)', async () => {
+  const ext = loadExtension();
+  const r = await ext.resolveAndBuild('~col Aedes |');
+  assert.equal(r.actions.length, 0);
+});
+
+test('API destination rejects non-filter targets (browse / hub)', async () => {
+  const ext = loadExtension();
+  const r = await ext.resolveAndBuild('!hub |');
+  assert.equal(r.actions.length, 0);
 });
 
 // -------- Input with no recognized bang --------
 
-test('no bang: returns null URL', async () => {
+test('no bang: returns no actions', async () => {
   const ext = loadExtension();
   const r = await ext.resolveAndBuild('just words no bang');
-  assert.equal(r.url, null);
+  assert.equal(r.actions.length, 0);
 });
