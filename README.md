@@ -1,4 +1,4 @@
-# TaxonWorks Quick Filter
+# TaxonWorks Omnibox
 
 A Firefox address-bar extension that jumps you straight to a TaxonWorks
 filter task — and, while you're at it, to any of ~35 biodiversity-informatics
@@ -54,8 +54,8 @@ restarts — you'll need to re-load after every restart.
 2. In Firefox, open `about:debugging#/runtime/this-firefox`.
 3. Click **Load Temporary Add-on…**
 4. Pick the `manifest.json` file in the repo root.
-5. Open the extension's options page once (`about:addons` → TaxonWorks Quick
-   Filter → Options) and set your default TaxonWorks instance.
+5. Open the extension's options page once (`about:addons` → TaxonWorks
+   Omnibox → Options) and set your default TaxonWorks instance.
 
 That's it — type `tw ` (with a trailing space) in the address bar to start
 using it.

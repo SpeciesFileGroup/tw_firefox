@@ -1,12 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "TaxonWorks Bang Search",
+  "name": "TaxonWorks Omnibox",
   "version": "0.0.1",
   "description": "Type 'tw ' in the address bar, then a bang like !s, !t, !co and key:value params to jump straight to a TaxonWorks filter task.",
   "browser_specific_settings": {
     "gecko": {
       "id": "tw-quick-filter@taxonworks",
-      "strict_min_version": "115.0"
+      "strict_min_version": "115.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   },
   "permissions": ["storage", "activeTab"],
