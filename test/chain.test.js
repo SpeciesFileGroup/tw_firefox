@@ -118,12 +118,14 @@ test('single-stage chain (no >): same as before chain feature', async () => {
 
 // -------- Edge cases --------
 
-test('chain: query_term from bare terms nests correctly', async () => {
+test('chain: bare-term key from upstream nests correctly', async () => {
   const r = await resolve('!t Apis > !s');
-  // Apis becomes query_term, wrapped under taxon_name_query
+  // Apis is the bare term. taxon_names doesn't accept query_term — its
+  // bare-term key is `name` (and it's array-typed, so `name[]`). The chain
+  // wraps the whole upstream params under taxon_name_query.
   assert.equal(
     r.url,
-    `${HOST}/tasks/sources/filter?taxon_name_query[query_term]=Apis`
+    `${HOST}/tasks/sources/filter?taxon_name_query[name][]=Apis`
   );
 });
 

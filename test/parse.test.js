@@ -134,12 +134,14 @@ test('parse: chain with @host and | (both global)', () => {
   assert.deepEqual(r.actions, [{ destination: 'api', disposition: 'newForegroundTab' }]);
 });
 
-test('parse: < is NOT a chain operator (stays in rest)', () => {
-  const r = parse('!s type:book < !tn');
-  // No chain happens — all tokens after !s flow into its rest
-  assert.equal(r.stages.length, 1);
-  assert.equal(r.stages[0].target.label, 'Sources');
-  assert.ok(r.stages[0].rest.includes('<'));
+test('parse: standalone < combined with a bang flags hasInvalidArrow', () => {
+  // `<` has the opposite data-flow direction in Unix; auto-correcting to
+  // `>` would silently change the destination. parse() flags it; the
+  // higher-level resolveAndBuild surfaces a "use >" error.
+  assert.equal(parse('!s type:book < !tn').hasInvalidArrow, true);
+  assert.equal(parse('!s type:book > !tn').hasInvalidArrow, false);
+  // `<` in plain text without any bang isn't worth flagging.
+  assert.equal(parse('foo < bar').hasInvalidArrow, false);
 });
 
 test('parse: external bang uses ~ sigil', () => {

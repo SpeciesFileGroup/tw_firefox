@@ -1,0 +1,103 @@
+name: Release
+
+# Triggered by pushing a tag like `v0.1.0`. The tag's version must match
+# manifest.json's "version" field; the workflow asserts this and fails fast
+# if they drift.
+#
+# What it does:
+#   1. Lints + tests
+#   2. Submits the source tree to Mozilla for unlisted signing
+#   3. Creates a GitHub Release with the signed XPI as the headline asset
+#   4. Generates updates.json and attaches it to the same release
+#
+# Auto-update mechanism:
+#   The manifest's `update_url` points at
+#   `releases/latest/download/updates.json`. GitHub redirects that to the
+#   matching asset on whichever release is most recent (non-prerelease), so
+#   every install on every prior version polls and discovers the new one.
+#
+# Required repo secrets:
+#   AMO_JWT_ISSUER  — "JWT issuer" from addons.mozilla.org/developers/addon/api/key/
+#   AMO_JWT_SECRET  — "JWT secret" from the same page
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install web-ext
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify tag matches manifest version
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          manifest_version=$(node -p "require('./manifest.json').version")
+          if [ "$tag" != "$manifest_version" ]; then
+            echo "::error::Tag v$tag does not match manifest.json version $manifest_version. Bump manifest.json + package.json before tagging."
+            exit 1
+          fi
+
+      - name: Lint extension
+        run: npm run lint
+
+      - name: Sign extension (Mozilla unlisted)
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: npm run sign
+
+      - name: Locate signed XPI
+        id: xpi
+        run: |
+          xpi=$(ls web-ext-artifacts/*.xpi | head -n1)
+          if [ -z "$xpi" ]; then
+            echo "::error::No signed XPI found in web-ext-artifacts/. Mozilla signing may have failed silently — check the previous step's logs."
+            exit 1
+          fi
+          echo "path=$xpi" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$xpi")" >> "$GITHUB_OUTPUT"
+
+      - name: Generate updates.json
+        run: |
+          version="${GITHUB_REF#refs/tags/v}"
+          ext_id=$(node -p "require('./manifest.json').browser_specific_settings.gecko.id")
+          min_ver=$(node -p "require('./manifest.json').browser_specific_settings.gecko.strict_min_version || ''")
+          xpi_url="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.xpi.outputs.name }}"
+
+          EXT_ID="$ext_id" VERSION="$version" XPI_URL="$xpi_url" MIN_VER="$min_ver" \
+          node -e '
+            const fs = require("fs");
+            const id = process.env.EXT_ID;
+            const version = process.env.VERSION;
+            const link = process.env.XPI_URL;
+            const minVer = process.env.MIN_VER;
+            const entry = { version, update_link: link };
+            if (minVer) entry.applications = { gecko: { strict_min_version: minVer } };
+            const json = { addons: { [id]: { updates: [entry] } } };
+            fs.writeFileSync("web-ext-artifacts/updates.json", JSON.stringify(json, null, 2) + "\n");
+          '
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            "${{ steps.xpi.outputs.path }}" \
+            "web-ext-artifacts/updates.json" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

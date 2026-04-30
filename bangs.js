@@ -7,8 +7,39 @@
 //                                             May contain `{}` as a placeholder
 //                                             that is filled with the URL-encoded
 //                                             bare query (or `id:` fallback).
+//                                             Optional `defaultArg`: if set,
+//                                             substitutes for `{}` when the
+//                                             user provides no bare/id value
+//                                             (e.g. `defaultArg: 'list'` so
+//                                             `!proj` → `/projects/list`).
+//                                             Without `defaultArg` an empty
+//                                             value collapses `/foo/{}` to
+//                                             `/foo` (no trailing slash).
 //   - External:        { url, label }       → arbitrary URL template; `{}` is
 //                                             replaced with the URL-encoded query.
+//                                             Optional `dualSigil: true`:
+//                                             accept either `!key` or `~key`
+//                                             (used for project-internal infra
+//                                             that happens to live on a third-
+//                                             party host, e.g. the GitHub
+//                                             issue tracker).
+//                                             Optional `numericUrl`: alternate
+//                                             template used when the bare query
+//                                             is purely digits — lets a tracker
+//                                             bang direct-nav to a specific id
+//                                             (`!issue 1234` → /issues/1234)
+//                                             while non-numeric input still
+//                                             routes through `url` (search).
+//                                             Optional `keyValueInQuery: true`:
+//                                             fold `key:value` tokens into the
+//                                             `{}` substitution instead of
+//                                             appending them as separate URL
+//                                             params. For services whose own
+//                                             search syntax uses `key:value`
+//                                             (GitHub, Stack Overflow, …) so
+//                                             `~issue is:closed` ends up as
+//                                             `q=...+is:closed` rather than
+//                                             a stray `&is=closed`.
 // Either kind may include an optional `examples: [{ query, hint }]` that the
 // omnibox shows as dropdown suggestions when the user has typed the bang and
 // no further query. `query` is what fills in; `hint` is a short explanation.
@@ -16,6 +47,132 @@
 // Shared target objects — aliases that should all surface the same examples
 // reference the same object. If you add a new alias for one of these, point
 // it at the existing const rather than cloning.
+const PROJECT_TARGET = {
+  rawPath: '/projects/{}', label: 'Project',
+  // No id given → list all projects (`/projects` itself routes through a
+  // "new or list?" landing page; `/projects/list` is what users actually want).
+  defaultArg: 'list',
+  examples: [
+    { query: '',       hint: 'list all projects' },
+    { query: '13',     hint: 'view project 13' },
+    { query: 'id:13',  hint: 'same, key:value form' }
+  ]
+};
+
+// Project switcher. The bang sets the project context as a server-side
+// session cookie and then redirects to the user's workbench starting page.
+//
+// `sequential: true` marks this as a valid head of a `;` chain — i.e. the
+// nav has a session-side-effect that subsequent navs depend on. Without
+// this flag, `;` is rejected (sequencing two unrelated navs is just
+// wasteful — the user would have typed the second URL directly).
+const PROJECT_SELECT_TARGET = {
+  rawPath: '/projects/{}/select',
+  label: 'Select project',
+  sequential: true,
+  examples: [
+    { query: '50',                        hint: 'select project 50' },
+    { query: 'id:50',                     hint: 'same, key:value form' },
+    { query: '50 ; !dtn 3893823',         hint: 'select 50, then view taxon name 3893823' }
+  ]
+};
+
+const USER_TARGET = {
+  rawPath: '/users/{}', label: 'User',
+  // Bare `/users` is the index; with an id it shows the user's profile.
+  examples: [
+    { query: '',        hint: 'list all users' },
+    { query: '277',     hint: 'view user 277' },
+    { query: 'id:277',  hint: 'same, key:value form' }
+  ]
+};
+
+// Project / community resources — third-party hosted but project-internal
+// in spirit, so reachable via either sigil (`dualSigil: true`).
+const SFG_TARGET = {
+  url: 'https://speciesfilegroup.org',
+  label: 'Species File Group',
+  dualSigil: true
+};
+
+const EVENTS_TARGET = {
+  url: 'https://speciesfilegroup.org/events.html',
+  label: 'SFG events',
+  dualSigil: true
+};
+
+const DONATE_TARGET = {
+  url: 'https://www.givecampus.com/campaigns/49638/donations/new',
+  label: 'Donate to Species File Group',
+  dualSigil: true
+};
+
+// matrix.to is the standard Matrix-room launcher — friendlier than
+// hard-coding Element web (lets users open in any Matrix client) but
+// still requires a Matrix account to actually read messages. There is
+// no general-purpose read-without-sign-on view for Matrix rooms.
+const CHAT_TARGET = {
+  url: 'https://matrix.to/#/#TaxonWorks:gitter.im',
+  label: 'TaxonWorks chat (Matrix)',
+  dualSigil: true
+};
+
+const TOGETHER_TARGET = {
+  url: 'https://together.taxonworks.org',
+  label: 'TaxonWorks Together',
+  dualSigil: true
+};
+
+// Cheatsheet — the omnibox handler intercepts this sentinel `url` and
+// navigates to cheatsheet.html (an extension page that lists every
+// bang from BANGS + bangOverrides). dualSigil so `!help` and `~help`
+// both resolve.
+const CHEATSHEET_TARGET = {
+  url: '__tw_cheatsheet__',
+  label: 'Bang cheatsheet',
+  dualSigil: true
+};
+
+// Options / settings page — sentinel intercepted in onInputEntered and
+// swapped for runtime.getURL('options.html'). dualSigil for the same
+// "doesn't matter which sigil" reason.
+const OPTIONS_TARGET = {
+  url: '__tw_options__',
+  label: 'Extension settings',
+  dualSigil: true
+};
+
+// Public room link for the SFG community-consult calls — same URL that's
+// listed on speciesfilegroup.org/events.html.
+const ZOOM_TARGET = {
+  url: 'https://illinois.zoom.us/my/sfgcommons?pwd=eVI4UkdIUzdIYXRIcUhreVdES2ZQQT09',
+  label: 'SFG Commons Zoom',
+  dualSigil: true
+};
+
+// `dualSigil: true` lets this target be reached by either `!issue` or
+// `~issue`. The TaxonWorks issue tracker is hosted on GitHub but functions
+// as project-internal infra, so insisting on the `~` (external) sigil
+// would be a usability hit.
+const ISSUES_TARGET = {
+  url: 'https://github.com/SpeciesFileGroup/taxonworks/issues?q=is%3Aissue+{}',
+  // Pure-digit input direct-navs to a specific issue rather than searching
+  // for the literal number string.
+  numericUrl: 'https://github.com/SpeciesFileGroup/taxonworks/issues/{}',
+  // GitHub's issue search uses `is:open`, `author:foo`, etc. inside `q=`.
+  // Fold `key:value` tokens into the search string rather than turning
+  // them into stray URL params (which GitHub would ignore).
+  keyValueInQuery: true,
+  label: 'TaxonWorks issues (GitHub)',
+  dualSigil: true,
+  examples: [
+    { query: '',                        hint: 'all issues' },
+    { query: 'is:open morphology',       hint: 'open issues mentioning "morphology"' },
+    { query: 'is:closed author:mjy',    hint: 'closed issues by @mjy' },
+    { query: '1234',                    hint: 'open issue #1234 directly' }
+  ]
+};
+
 const SOURCES_TARGET = {
   path: 'sources', label: 'Sources',
   examples: [
@@ -75,78 +232,104 @@ const GN_PARSER_TARGET = {
 
 const BANGS = {
   // --- TaxonWorks filter tasks (internal) ---
+  // Each filter resource also gets an `f<short>` alias mirroring the
+  // `b<short>` browse / `n<short>` new conventions, so users who guess
+  // `!fco` ("filter collection objects") land on the right page.
   s:           SOURCES_TARGET,
+  fs:          SOURCES_TARGET,
   src:         SOURCES_TARGET,
   source:      SOURCES_TARGET,
 
   t:           TAXON_NAMES_TARGET,
+  ftn:         TAXON_NAMES_TARGET,
   tn:          TAXON_NAMES_TARGET,
   n:           TAXON_NAMES_TARGET,
   name:        TAXON_NAMES_TARGET,
 
   tnr:         { path: 'taxon_name_relationships',    label: 'Taxon name relationships' },
+  ftnr:        { path: 'taxon_name_relationships',    label: 'Taxon name relationships' },
   rel:         { path: 'taxon_name_relationships',    label: 'Taxon name relationships' },
 
+  // `fo` is field_occurrences (predates the f-prefix convention), so the
+  // `f<short>` alias for otus is `fotu`, not `fo`.
   o:           { path: 'otus',                        label: 'OTUs' },
+  fotu:        { path: 'otus',                        label: 'OTUs' },
   otu:         { path: 'otus',                        label: 'OTUs' },
 
   co:          COLLECTION_OBJECTS_TARGET,
+  fco:         COLLECTION_OBJECTS_TARGET,
   specimen:    COLLECTION_OBJECTS_TARGET,
   obj:         COLLECTION_OBJECTS_TARGET,
 
   fo:          { path: 'field_occurrences',           label: 'Field occurrences' },
+  ffield:      { path: 'field_occurrences',           label: 'Field occurrences' },
   field:       { path: 'field_occurrences',           label: 'Field occurrences' },
 
   ce:          { path: 'collecting_events',           label: 'Collecting events' },
+  fce:         { path: 'collecting_events',           label: 'Collecting events' },
   event:       { path: 'collecting_events',           label: 'Collecting events' },
 
   ad:          { path: 'asserted_distributions',      label: 'Asserted distributions' },
+  fad:         { path: 'asserted_distributions',      label: 'Asserted distributions' },
   dist:        { path: 'asserted_distributions',      label: 'Asserted distributions' },
 
   ba:          { path: 'biological_associations',     label: 'Biological associations' },
+  fba:         { path: 'biological_associations',     label: 'Biological associations' },
   bio:         { path: 'biological_associations',     label: 'Biological associations' },
   assoc:       { path: 'biological_associations',     label: 'Biological associations' },
 
   obs:         { path: 'observations',                label: 'Observations' },
+  fobs:        { path: 'observations',                label: 'Observations' },
   observation: { path: 'observations',                label: 'Observations' },
 
   d:           { path: 'descriptors',                 label: 'Descriptors' },
+  fd:          { path: 'descriptors',                 label: 'Descriptors' },
   desc:        { path: 'descriptors',                 label: 'Descriptors' },
 
   i:           { path: 'images',                      label: 'Images' },
+  fi:          { path: 'images',                      label: 'Images' },
   img:         { path: 'images',                      label: 'Images' },
   image:       { path: 'images',                      label: 'Images' },
 
   snd:         { path: 'sounds',                      label: 'Sounds' },
+  fsnd:        { path: 'sounds',                      label: 'Sounds' },
   sound:       { path: 'sounds',                      label: 'Sounds' },
 
   p:           { path: 'people',                      label: 'People' },
+  fp:          { path: 'people',                      label: 'People' },
   person:      { path: 'people',                      label: 'People' },
   people:      { path: 'people',                      label: 'People' },
 
   l:           { path: 'loans',                       label: 'Loans' },
+  fl:          { path: 'loans',                       label: 'Loans' },
   loan:        { path: 'loans',                       label: 'Loans' },
 
   ext:         { path: 'extracts',                    label: 'Extracts' },
+  fext:        { path: 'extracts',                    label: 'Extracts' },
   extract:     { path: 'extracts',                    label: 'Extracts' },
 
   ap:          { path: 'anatomical_parts',            label: 'Anatomical parts' },
+  fap:         { path: 'anatomical_parts',            label: 'Anatomical parts' },
   part:        { path: 'anatomical_parts',            label: 'Anatomical parts' },
 
   // `!ns` is reserved for "new source" below (more frequently used than
-  // the namespaces filter). For the namespaces filter use `!namespace` or
-  // the short `!nmsp`.
+  // the namespaces filter). For the namespaces filter use `!namespace`,
+  // `!nmsp`, or `!fnmsp`.
   nmsp:        { path: 'namespaces',                  label: 'Namespaces' },
+  fnmsp:       { path: 'namespaces',                  label: 'Namespaces' },
   namespace:   { path: 'namespaces',                  label: 'Namespaces' },
 
   // NOTE: contents filter is mounted under /tasks/content/filter (singular scope).
   cnt:         { path: 'content',                     label: 'Contents' },
+  fcnt:        { path: 'content',                     label: 'Contents' },
   content:     { path: 'content',                     label: 'Contents' },
 
   dwc:         { path: 'dwc_occurrences',             label: 'DwC occurrences' },
+  fdwc:        { path: 'dwc_occurrences',             label: 'DwC occurrences' },
   occ:         { path: 'dwc_occurrences',             label: 'DwC occurrences' },
 
   ann:         { path: 'annotations',                 label: 'Annotations' },
+  fann:        { path: 'annotations',                 label: 'Annotations' },
   a:           { path: 'annotations',                 label: 'Annotations' },
 
   // --- Browse tasks ---
@@ -192,18 +375,192 @@ const BANGS = {
   leadshub:    { fullPath: 'leads/hub',                                              label: 'Leads hub' },
   omh:         { fullPath: 'observation_matrices/observation_matrix_hub',            label: 'Observation matrix hub' },
 
-  // --- Project switcher ---
-  sel:         { rawPath: '/projects/{}/select',                                     label: 'Select project',
-                 examples: [
-                   { query: '50',    hint: 'select project 50' },
-                   { query: 'id:50', hint: 'same, key:value form' }
-                 ] },
-  project:     { rawPath: '/projects/{}/select',                                     label: 'Select project' },
+  // --- Projects (view / list) ---
+  proj:        PROJECT_TARGET,
+  projects:    PROJECT_TARGET,
+  nproj:       { rawPath: '/projects/new',                                           label: 'New project' },
+
+  // --- Users / administration ---
+  // `!users` mirrors `!proj`: bare → /users (index); `!users 277` → /users/277.
+  // `!signup` is the new-user form (admin-only on most instances). The batch
+  // form is a separate task page.
+  users:        USER_TARGET,
+  user:         USER_TARGET,
+  signup:       { rawPath: '/signup',                                                label: 'New user (signup)' },
+  nuser:        { rawPath: '/signup',                                                label: 'New user' },
+  nusers:       { fullPath: 'administrator/batch_add_users',                         label: 'Batch add users' },
+  reset:        { rawPath: '/forgot_password',                                       label: 'Reset password' },
+  admin:        { rawPath: '/administration',                                        label: 'Administration' },
+  useractivity: { rawPath: '/administration/user_activity',                          label: 'User activity dashboard' },
+  ua:           { rawPath: '/administration/user_activity',                          label: 'User activity dashboard' },
+  dataoverview: { rawPath: '/administration/data_overview',                          label: 'Data overview' },
+  datahealth:   { rawPath: '/administration/data_health',                            label: 'Data health' },
+  datareindex:  { rawPath: '/administration/data_reindex',                           label: 'Data reindex' },
+  dataclass:    { rawPath: '/administration/data_class_summary',                     label: 'Data class summary' },
+  cachemaps:    { rawPath: '/administration/cached_maps_status',                     label: 'Cached maps status' },
+
+  // --- Issue tracker (dual-sigil — accepts !issue or ~issue) ---
+  issue:        ISSUES_TARGET,
+  issues:       ISSUES_TARGET,
+  gh:           ISSUES_TARGET,
+  git:          ISSUES_TARGET,
+
+  // --- Help / cheatsheet (dual-sigil) ---
+  help:         CHEATSHEET_TARGET,
+  cheat:        CHEATSHEET_TARGET,
+
+  // --- Extension settings (dual-sigil) ---
+  config:       OPTIONS_TARGET,
+  settings:     OPTIONS_TARGET,
+  cfg:          OPTIONS_TARGET,
+  options:      OPTIONS_TARGET,
+
+  // --- Project / community resources (dual-sigil) ---
+  sfg:          SFG_TARGET,
+  events:       EVENTS_TARGET,
+  donate:       DONATE_TARGET,
+  give:         DONATE_TARGET,
+  chat:         CHAT_TARGET,
+  twt:          TOGETHER_TARGET,
+  together:     TOGETHER_TARGET,
+  zoom:         ZOOM_TARGET,
+
+  // --- Project switcher (sets the active project for your session) ---
+  sel:         PROJECT_SELECT_TARGET,
+  select:      PROJECT_SELECT_TARGET,
+  project:     PROJECT_SELECT_TARGET,
 
   // --- Dashboards ---
+  dashboard:   { rawPath: '/dashboard',                                              label: 'Dashboard' },
+  dash:        { rawPath: '/dashboard',                                              label: 'Dashboard' },
   dlo:         { fullPath: 'loans/dashboard',                                        label: 'Loans dashboard' },
   ddwc:        { fullPath: 'dwc/dashboard',                                          label: 'DwC dashboard' },
   omd:         { fullPath: 'observation_matrices/dashboard',                         label: 'Observation matrices dashboard' },
+
+  // --- Additional task pages (specialized / analysis / power-user) ---
+
+  // Sources
+  gnf:         { fullPath: 'sources/gnfinder',                                       label: 'GN Finder (extract names from sources)' },
+  gnfinder:    { fullPath: 'sources/gnfinder',                                       label: 'GN Finder (extract names from sources)' },
+  dpack:       { fullPath: 'sources/documents_packager',                             label: 'Documents packager' },
+
+  // Nomenclature / taxon names. Short alias beside the descriptive one.
+  nst:         { fullPath: 'nomenclature/stats',                                     label: 'Nomenclature stats' },
+  nomstats:    { fullPath: 'nomenclature/stats',                                     label: 'Nomenclature stats' },
+  tns:         { fullPath: 'taxon_names/stats',                                      label: 'Taxon name stats' },
+  tnstats:     { fullPath: 'taxon_names/stats',                                      label: 'Taxon name stats' },
+  nmatch:      { fullPath: 'nomenclature/match',                                     label: 'Match against nomenclature' },
+  pc:          { fullPath: 'nomenclature/paper_catalog',                             label: 'Paper catalog' },
+  papercat:    { fullPath: 'nomenclature/paper_catalog',                             label: 'Paper catalog' },
+  tntable:     { fullPath: 'taxon_names/table',                                      label: 'Taxon names table' },
+
+  // People + unify (deduplication)
+  auth:        { fullPath: 'people/author',                                          label: 'Author list' },
+  authors:     { fullPath: 'people/author',                                          label: 'Author list' },
+  psum:        { fullPath: 'people/summary',                                         label: 'People summary' },
+  unify:       { fullPath: 'unify/objects',                                          label: 'Unify (merge duplicate objects)' },
+  unifyp:      { fullPath: 'unify/people',                                           label: 'Unify people (merge duplicate people)' },
+
+  // Project info
+  pact:        { fullPath: 'projects/activity',                                      label: 'Project activity' },
+  pdata:       { fullPath: 'projects/data',                                          label: 'Project data' },
+  pyir:        { fullPath: 'projects/year_in_review',                                label: 'Project year in review' },
+
+  // Imports / exports
+  coldp:       { fullPath: 'exports/coldp',                                          label: 'Export — CoLDP' },
+  // The exports/nomenclature controller has no `:index` — `/basic` is the
+  // user-facing entry point (the basic-export form).
+  nex:         { fullPath: 'exports/nomenclature/basic',                             label: 'Export — Nomenclature (basic)' },
+  nomexp:      { fullPath: 'exports/nomenclature/basic',                             label: 'Export — Nomenclature (basic)' },
+  dim:         { fullPath: 'dwca_import',                                            label: 'DwC-A import' },
+  dwcimport:   { fullPath: 'dwca_import',                                            label: 'DwC-A import' },
+  gim:         { fullPath: 'gazetteers/import_gazetteers',                           label: 'Import gazetteers' },
+  gazimport:   { fullPath: 'gazetteers/import_gazetteers',                           label: 'Import gazetteers' },
+
+  // Controlled vocabularies / labels
+  cvm:         { fullPath: 'controlled_vocabularies/manage',                         label: 'Controlled vocabulary manager' },
+  // The topics_hub controller registers its index as `get 'index'` (not
+  // `get '/'`), so the URL is /tasks/.../topics_hub/index — appended here.
+  topics:      { fullPath: 'controlled_vocabularies/topics_hub/index',               label: 'Topics hub' },
+  // The biocuration controller has no `:index` — `/build_collection` is the
+  // form users actually want.
+  biocur:      { fullPath: 'controlled_vocabularies/biocuration/build_collection',   label: 'Biocuration (build collection)' },
+  labels:      { fullPath: 'labels/print_labels',                                    label: 'Print labels' },
+  plabels:     { fullPath: 'labels/print_labels',                                    label: 'Print labels' },
+
+  // Collection-object workflows
+  dig:         { fullPath: 'collection_objects/freeform_digitize',                   label: 'Freeform digitize' },
+  digitize:    { fullPath: 'collection_objects/freeform_digitize',                   label: 'Freeform digitize' },
+  gdig:        { fullPath: 'collection_objects/grid_digitize',                       label: 'Grid digitize' },
+  gdigitize:   { fullPath: 'collection_objects/grid_digitize',                       label: 'Grid digitize' },
+  cotable:     { fullPath: 'collection_objects/table',                               label: 'Collection objects table' },
+  cosum:       { fullPath: 'collection_objects/summary',                             label: 'Collection objects summary' },
+  comatch:     { fullPath: 'collection_objects/match',                               label: 'Match collection objects' },
+
+  // Observation matrices
+  ikey:        { fullPath: 'observation_matrices/interactive_key',                   label: 'Interactive key' },
+  nmatrix:     { fullPath: 'observation_matrices/new_matrix',                        label: 'New observation matrix' },
+  // `mview` accepts an optional matrix id: `!mview 5` → /tasks/.../view/5;
+  // bare `!mview` collapses to /tasks/.../view (the index).
+  mview:       { rawPath: '/tasks/observation_matrices/view/{}',                     label: 'View observation matrix' },
+  imx:         { fullPath: 'observation_matrices/image_matrix',                      label: 'Image matrix' },
+  imatrix:     { fullPath: 'observation_matrices/image_matrix',                      label: 'Image matrix' },
+
+  // Biological associations
+  bag:         { fullPath: 'biological_associations/biological_associations_graph',  label: 'Biological associations graph' },
+  basum:       { fullPath: 'biological_associations/summary',                        label: 'Biological associations summary' },
+
+  // Other tasks
+  odup:        { fullPath: 'otus/duplicates',                                        label: 'OTU duplicates' },
+  bad:         { fullPath: 'otus/browse_asserted_distributions',                     label: 'Browse asserted distributions' },
+  cemeta:      { fullPath: 'collecting_events/metadata',                             label: 'Collecting events metadata' },
+  cesp:        { fullPath: 'collecting_events/spatial_summary',                      label: 'Collecting events spatial summary' },
+  cespatial:   { fullPath: 'collecting_events/spatial_summary',                      label: 'Collecting events spatial summary' },
+  dkey:        { fullPath: 'leads/dichotomous_key',                                  label: 'Dichotomous key' },
+  news:        { fullPath: 'news/browse',                                            label: 'News' },
+  etype:       { fullPath: 'type_material/edit_type_material',                       label: 'Edit type material' },
+
+  // Stepwise data-curation workflows. The two `parse/stepwise` routes
+  // register their action as `get 'index'` (not `get '/'`), so /index is
+  // part of the path; the other two use `get '/', action: :index`.
+  stepdates:   { fullPath: 'collecting_events/parse/stepwise/dates/index',           label: 'Stepwise dates parser' },
+  stepll:      { fullPath: 'collecting_events/parse/stepwise/lat_long/index',        label: 'Stepwise lat/long parser' },
+  stepcoll:    { fullPath: 'collecting_events/stepwise/collectors',                  label: 'Stepwise collectors' },
+  stepdet:     { fullPath: 'collection_objects/stepwise/determinations',             label: 'Stepwise determinations' },
+
+  // --- Data resource pages (the items on /hub?list=data) ---
+  // `d<short>` jumps to the standard Rails REST resource for that model.
+  // Bare → `/<plural>` index; with a numeric (or `id:N`) argument → the
+  // record's show page `/<plural>/<id>`. Pairs naturally with `!sel` —
+  // `!sel 13 ; !dtn 5` selects project 13 then deep-links to taxon name 5.
+  // Skipped where the prefix collides with an existing alias:
+  //   `dlo` → loans dashboard (use `dl` for loans data)
+  //   `ddwc` → DwC dashboard (use `docc` for DwC occurrences data)
+  //   `d`/`desc` → descriptors filter (use `ddesc` for descriptors data)
+  // Annotations has no `/annotations` resource so there's no `dann`.
+  ds:          { rawPath: '/sources/{}',                     label: 'Sources data' },
+  dtn:         { rawPath: '/taxon_names/{}',                 label: 'Taxon names data' },
+  dtnr:        { rawPath: '/taxon_name_relationships/{}',    label: 'Taxon name relationships data' },
+  dotu:        { rawPath: '/otus/{}',                        label: 'OTUs data' },
+  do:          { rawPath: '/otus/{}',                        label: 'OTUs data' },
+  dco:         { rawPath: '/collection_objects/{}',          label: 'Collection objects data' },
+  dfo:         { rawPath: '/field_occurrences/{}',           label: 'Field occurrences data' },
+  dce:         { rawPath: '/collecting_events/{}',           label: 'Collecting events data' },
+  dad:         { rawPath: '/asserted_distributions/{}',      label: 'Asserted distributions data' },
+  dba:         { rawPath: '/biological_associations/{}',     label: 'Biological associations data' },
+  dobs:        { rawPath: '/observations/{}',                label: 'Observations data' },
+  ddesc:       { rawPath: '/descriptors/{}',                 label: 'Descriptors data' },
+  di:          { rawPath: '/images/{}',                      label: 'Images data' },
+  dsnd:        { rawPath: '/sounds/{}',                      label: 'Sounds data' },
+  dp:          { rawPath: '/people/{}',                      label: 'People data' },
+  dl:          { rawPath: '/loans/{}',                       label: 'Loans data' },
+  dext:        { rawPath: '/extracts/{}',                    label: 'Extracts data' },
+  dap:         { rawPath: '/anatomical_parts/{}',            label: 'Anatomical parts data' },
+  dnmsp:       { rawPath: '/namespaces/{}',                  label: 'Namespaces data' },
+  // The contents filter is at /tasks/content/filter (singular), but the
+  // REST resource route is /contents (plural). Match the route here.
+  dcnt:        { rawPath: '/contents/{}',                    label: 'Contents data' },
+  docc:        { rawPath: '/dwc_occurrences/{}',             label: 'DwC occurrences data' },
 
   // --- External biodiversity services (pass-through search) ---
   col:   { url: 'https://www.catalogueoflife.org/data/search?q={}',                                  label: 'Catalogue of Life',
@@ -212,12 +569,18 @@ const BANGS = {
              { query: 'Homo sapiens',  hint: 'species lookup' }
            ] },
   clb:   { url: 'https://www.checklistbank.org/nameusage/search?q={}',                               label: 'ChecklistBank',
+           // Any URL param CLB's nameusage search accepts can be passed as
+           // `key:value` after the bang — the parser sends them all as
+           // separate query-string params (see buildExternalUrl). The
+           // dataset key shortcuts live on CLB's side: 3LR (COL Latest
+           // Release), 3LXR (COL eXtended Latest Release), COL25 (COL
+           // Annual Checklist 2025), or any numeric dataset id like 2317.
            examples: [
-             { query: 'Aedes aegypti',      hint: 'scientific name' },
-             { query: 'datasetKey:2317',    hint: '3i (dataset 2317)' },
-             { query: 'datasetKey:COL25',   hint: 'COL Annual Checklist 2025' },
-             { query: 'datasetKey:3LR',     hint: 'COL Latest Release' },
-             { query: 'datasetKey:3LXR',    hint: 'COL eXtended Latest Release' }
+             { query: 'Aedes aegypti',                                                hint: 'scientific name' },
+             { query: 'datasetKey:3LR Trifolium',                                     hint: 'scope to a dataset (3LR = COL Latest Release; also COL25, 3LXR, or any id)' },
+             { query: 'authorship:Breuning authorshipYear:1938 rank:species',          hint: 'author + year + rank facets' },
+             { query: 'nomCode:zoological extinct:false group:coleoptera',            hint: 'code + extinct flag + informal group' },
+             { query: 'content:AUTHORSHIP status:synonym Linnaeus',                   hint: 'scope what q searches (content=AUTHORSHIP / SCIENTIFIC_NAME / VERNACULAR_NAME) + status filter' }
            ] },
   gbif:  { url: 'https://www.gbif.org/species/search?q={}',                                          label: 'GBIF species' },
   bhl:   { url: 'https://www.biodiversitylibrary.org/search?searchTerm={}',                          label: 'Biodiversity Heritage Library',
@@ -256,6 +619,22 @@ const BANGS = {
   ipni:        { url: 'https://www.ipni.org/search?q={}',                                            label: 'IPNI' },
   wsc:         { url: 'https://wsc.nmbe.ch/search?query={}',                                         label: 'World Spider Catalog' },
   spider:      { url: 'https://wsc.nmbe.ch/search?query={}',                                         label: 'World Spider Catalog' },
+  // Index Fungorum text search is JS-driven and ignores URL params, so
+  // bare/non-numeric input lands on the search page for Ctrl+F. Numeric
+  // (or `id:N`) routes to the working record-id template.
+  if:          { url: 'https://www.indexfungorum.org/names/names.asp',
+                 numericUrl: 'https://www.indexfungorum.org/names/NamesRecord.asp?RecordID={}',
+                 label: 'Index Fungorum',
+                 examples: [
+                   { query: '549878',     hint: 'view record by IF RecordID' },
+                   { query: 'id:549878',  hint: 'same, key:value form' },
+                   { query: 'Boletus',    hint: 'open the search page (manual entry — IF\'s search ignores URL params)' }
+                 ] },
+  indexfungorum: { url: 'https://www.indexfungorum.org/names/names.asp',
+                   numericUrl: 'https://www.indexfungorum.org/names/NamesRecord.asp?RecordID={}',
+                   label: 'Index Fungorum' },
+  algae:       { url: 'https://www.algaebase.org/search/species/?name={}',                            label: 'AlgaeBase (species)' },
+  algaebase:   { url: 'https://www.algaebase.org/search/species/?name={}',                            label: 'AlgaeBase (species)' },
   wikispecies: { url: 'https://species.wikimedia.org/wiki/{}',                                       label: 'Wikispecies' },
   alex:        { url: 'https://openalex.org/works?search.title_and_abstract={}',                     label: 'OpenAlex' },
   oa:          { url: 'https://openalex.org/works?search.title_and_abstract={}',                     label: 'OpenAlex' },
@@ -284,7 +663,29 @@ const BANGS = {
   tropicos:    { url: 'https://www.tropicos.org/name/Search?name={}',                                label: 'Tropicos' },
 
   iczn:        { url: 'https://www.iczn.org/home/CustomSearchForm/?Search={}&Source=All&action_customresults=Search', label: 'ICZN' },
-  ictv:        { url: 'https://ictv.global/search/find_the_species?search_text={}&search_modifier=contains', label: 'ICTV' }
+  // ICTV's `find_the_species` page is JS-driven and ignores URL params; the
+  // `/search/google` endpoint feeds their Google CSE and actually honors
+  // `keys=`, matching how !iczn / !icn / !icnp full-text-search their sites.
+  ictv:        { url: 'https://ictv.global/search/google?keys={}',                                         label: 'ICTV — virus taxonomy site search' },
+  // ICVCN = International Code of Virus Classification and Nomenclature.
+  // ICTV publishes the whole code text on a single static page; bang
+  // just lands users there for Ctrl+F.
+  icvcn:       { url: 'https://ictv.global/about/code',                                                    label: 'ICVCN — virus code (full text)' },
+  icn:         { url: 'https://www.iapt-taxon.org/nomen/search.html?zoom_query={}', label: 'ICN (IAPT — algae, fungi, plants)' },
+  icnp:        { url: 'https://the-icsp.org/index.php/component/finder/search?q={}',                       label: 'ICNP (ICSP — prokaryotes)' },
+
+  // Mammal Diversity Database. Pure-digit / `id:` input direct-navs to
+  // /taxon/<id>/ via numericUrl. Non-numeric input lands on the search
+  // page — MDD's search is a client-side React app that doesn't honor
+  // URL params, so we can't pre-fill the search box.
+  mdd:         { url: 'https://www.mammaldiversity.org/search/',
+                 numericUrl: 'https://www.mammaldiversity.org/taxon/{}/',
+                 label: 'Mammal Diversity Database',
+                 examples: [
+                   { query: '1006285',     hint: 'view taxon by MDD id' },
+                   { query: 'id:1006285',  hint: 'same, key:value form' },
+                   { query: 'Bos taurus',  hint: 'open the search page (manual entry — MDD\'s search ignores URL params)' }
+                 ] }
 };
 
 // TaxonWorks "throw to another filter" / radial chain support.
@@ -314,6 +715,28 @@ const INTERNAL_QUERY_KEYS = {
   'content':                     'content_query',
   'dwc_occurrences':             'dwc_occurrence_query',
   'annotations':                 'annotation_query'
+};
+
+// Per-filter override for the param name used when the user types bare text
+// (no `key:value`). The base-class `Queries::Query::Filter` does NOT handle
+// `query_term` generically — only `Queries::Source::Filter` does — so for
+// every other filter a bare term routed to `query_term` is silently dropped
+// by Rails strong params. Mapping each filter to the right text-search
+// attribute (extracted from `lib/queries/<resource>/filter.rb` PARAMS in
+// upstream TaxonWorks) makes `tw !tn foo` actually search for "foo".
+//
+// Filters absent from this map fall through to `query_term` (which works
+// for `sources` natively, and is silently ignored elsewhere — same as
+// today's behaviour, no regression).
+const INTERNAL_BARE_TERM_KEYS = {
+  'taxon_names':       'name',
+  'otus':              'name',
+  'descriptors':       'term',
+  'sounds':            'name',
+  'people':            'name',
+  'anatomical_parts':  'name',
+  'namespaces':        'name',
+  'content':           'text'
 };
 
 // Params that the corresponding TaxonWorks filter declares as arrays

@@ -1,0 +1,44 @@
+name: ✨ Feature request
+description: Propose new functionality (NOT a new bang — those go in Discussions).
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Suggesting a new bang?
+
+        **Use the "💡 Suggest a new bang" template instead.** It has the right structure (alias, sigil, URL patterns, examples) and gets the `bang-suggestion` label so reactions on it tally as votes — sort by 👍 with `label:bang-suggestion` to see what the community wants most.
+
+        Use *this* template only for changes to how the extension *itself* works — new operators, parser features, options-page improvements, sync flows, etc.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem?
+      description: What can't you do today, or what's awkward about how the extension currently works?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Sketch what you have in mind. Concrete examples of input/behavior beat abstract descriptions.
+      placeholder: |
+        e.g. "Add a `&&` operator that runs both navigations only if the first succeeds."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered (optional)
+      description: Any other approaches you thought of? Why are they worse?
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else? (optional)
+      description: Use cases, related issues, prior art in other extensions, etc.

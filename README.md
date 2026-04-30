@@ -17,6 +17,11 @@ Two sigils:
 
 - **`!`** for TaxonWorks targets (filter tasks, browse pages, hubs, new-record
   forms). Example: `!s` (Sources filter), `!bt` (Browse taxonomy).
+  - Internal aliases follow these prefix conventions: `f<short>` for filter
+    tasks (`!fco` → collection objects filter, mirroring the existing
+    `!co`), `b<short>` for browse (`!bco`), `n<short>` for new-record
+    (`!nco`), and `d<short>` for the standard data resource page at
+    `/<plural>` (`!dtn` → `/taxon_names`).
 - **`~`** for external biodiversity-informatics services. Example: `~col`
   (Catalogue of Life), `~gbif` (GBIF), `~doi` (DOI resolver).
 
@@ -43,6 +48,8 @@ on your configured TaxonWorks instance.
 | `tw !t Apis ||`                      | API view in a new background tab                  |
 | `tw !t Apis \|`                      | Both: frontend in new tab + API in new bg tab     |
 | `tw !sel 50`                         | Switch to project 50 (rawPath `{}` substitution)  |
+| `tw !sel 13 ; !dtn 3893823`          | Switch to project 13, then deep-link to that taxon name (sequential `;`) |
+| `tw !help`                           | Open the cheatsheet — every built-in bang, with examples         |
 
 ## Installing (temporary / development)
 
@@ -92,8 +99,12 @@ except inside double quotes.
   TaxonWorks host to send to. No `@name` means "use the configured default".
   Ignored for external service bangs.
 - **Bare terms** — anything not matching the above is joined with spaces:
-  - TW filters → sent as `query_term=...`, which most filters use as a loose
-    full-text match.
+  - TW filters → sent as the filter's text-search param. The base class doesn't
+    handle `query_term` generically — only `Sources` does — so each supported
+    filter is mapped to the right attribute (e.g. `taxon_names` → `name`,
+    `otus` → `name`, `descriptors` → `term`, `content` → `text`). Filters
+    without a clear text param fall back to `query_term` (silently dropped by
+    Rails strong params, same as before).
   - External services → substituted into the `{}` placeholder in the service's
     URL template.
 - **Bang sigils** — `!` for TaxonWorks targets (filter / browse / new / hub),
@@ -121,6 +132,11 @@ except inside double quotes.
   to contain `\` or `|` (e.g. `foo|bar` or `Apis\\`) are regular content,
   so there's no collision. Markers override both the key-modifier
   behavior (Alt+Enter, etc.) and the configured default below.
+
+  **Forward-slash aliases:** `/`, `//`, `/|`, `|/` are accepted everywhere
+  the corresponding `\`, `\\`, `\|`, `|\` are. Backslash is awkward to
+  type on most layouts and people genuinely confuse the two when writing
+  chains by hand, so both forms work identically.
 
 ## Filter chains
 
@@ -240,6 +256,67 @@ falls back to a `_stateId` + `localStorage` mechanism that we cannot
 participate in from a separate origin's session. Chains that bloat past that
 limit will fail at the server. In practice this only happens with
 multi-clause chains stacked across several stages.
+
+## Sequential navigation (`;`) — project-scoped deep links
+
+`>` is composition (one URL, nested params, one tab, one page). `;` is
+sequencing — two separate page loads in the same tab, where the first
+sets a session-side-effect that the second relies on:
+
+```
+tw !sel 13 ; !dtn 3893823
+  → 1. open /projects/13/select        (sets the project context cookie,
+                                         redirects to the workbench)
+    2. wait for that tab to finish loading
+    3. update the same tab to /taxon_names/3893823 — now scoped to project 13
+```
+
+The use case: TaxonWorks doesn't currently expose project-scoped deep
+links of the form `/projects/13/taxon_names/3893823`, so emailing a
+collaborator a direct link to a record inside *your* project isn't
+possible natively. `;` fills the gap — you (and anyone with the
+extension installed) can paste a `tw !sel … ; …` chain into the omnibox
+and land on the right record.
+
+**Restrictions, by design:**
+
+- The first group's destination must be a context-setting bang —
+  currently only `!sel` / `!select` / `!project`. Trying e.g.
+  `!s id:5 ; !tn foo` is rejected with a clear error: chaining two
+  unrelated navigations would just throw away the first.
+- Within a `;` group you can still use `>` for filter composition
+  (`!sel 13 ; !s with_doi:true > !tn` selects the project, then
+  navigates to a sources→taxon-names chain).
+- Trailing tab markers split cleanly. **Single-action markers**
+  (`\`, `\\`, `|`, `||`) work, with their two parts routing
+  separately:
+  - **disposition** (which tab — current, new foreground, new
+    background) applies to the *first* nav (where the tab opens; the
+    whole sequence rides in it),
+  - **destination** (frontend HTML vs API JSON) applies to the *last*
+    nav (where the user lands).
+
+  So `tw !sel 13 ; !t Apis |` selects project 13 in the current tab,
+  then loads `/api/v1/taxon_names?...` (project-13-scoped via the
+  cookie). `tw !sel 13 ; !t Apis ||` does the same in a new background
+  tab. If the last nav doesn't have an API equivalent (e.g.
+  `!dtn 5 |` — `!dtn` is a rawPath bang with no API endpoint), the
+  chain is rejected with a clear error rather than silently dropping
+  the marker.
+
+  **Dual-open markers** (`\|`, `|\`) are rejected outright in
+  sequential chains — combining sequential nav, dual-open, and a
+  project-context cookie is the kind of triple combination that's
+  easy to misread. If you want both the UI and the API of a record
+  inside a project, run two separate `;` chains (one with `|`, one
+  without).
+- A leading literal `tw` token is silently stripped from each group, so
+  shareable forms like `tw !sel 13 ; tw !dtn 5` work the same as
+  `!sel 13 ; !dtn 5`. Useful for pasting from docs/emails.
+
+If the second tab's load times out (15s) or the tab is closed before
+loading completes, the second navigation is skipped silently — the
+first nav still happened, so the user can recover manually.
 
 ## Tab behavior
 
@@ -502,7 +579,105 @@ Test files:
 
 Add new cases alongside these as you add features.
 
+## Backup & sync
+
+The options page has a **Backup & sync** section with three controls:
+
+- **Export settings** — downloads a JSON file containing your custom
+  bangs, host list, and default tab behavior. Save it for backup or
+  share it with collaborators.
+- **Import settings** — reads one back. Schema-stamped (`tw-firefox-omnibox/1`)
+  so future format changes won't silently corrupt old files.
+- **Use Firefox Sync** — opt-in checkbox. When on, the same settings
+  move to `browser.storage.sync` so they propagate across the Firefox
+  profiles you're signed in to. Off by default; no Mozilla account
+  required for the extension to work. The toggle migrates existing
+  settings between the two storage areas in one step (no manual
+  re-entry). The toggle itself is per-device — flip it on your work
+  laptop without affecting your phone.
+
 ## Publishing status
 
-Not yet published on addons.mozilla.org. Until it is, use the temporary
-install instructions above.
+Not yet published on addons.mozilla.org. Distribution is **self-hosted on
+GitHub Releases**, signed by Mozilla as an unlisted addon. Firefox auto-
+updates from the most recent release via the `update_url` baked into the
+manifest; users install the signed `.xpi` once from a release page and
+subsequent versions arrive automatically.
+
+## Releasing
+
+The release pipeline lives in `.github/workflows/release.yml`. A pushed
+tag of the form `v*` (e.g. `v0.1.0`) triggers it. The workflow lints,
+runs tests, submits the source to Mozilla for unlisted signing, and
+attaches the signed `.xpi` plus an `updates.json` to a new GitHub Release.
+
+### One-time setup
+
+1. **Create AMO API credentials.** Sign in to
+   `https://addons.mozilla.org/developers/addon/api/key/` and generate a
+   key pair. You'll get a "JWT issuer" (looks like `user:1234567:8`) and
+   a "JWT secret" (long hex string). Both are tied to your AMO account —
+   any account works as long as it owns the addon ID
+   `tw-quick-filter@taxonworks`.
+2. **Add repo secrets.** In the GitHub repo's Settings → Secrets and
+   variables → Actions, add:
+   - `AMO_JWT_ISSUER` — the JWT issuer
+   - `AMO_JWT_SECRET` — the JWT secret
+3. **First release.** The first time the workflow runs, Mozilla creates
+   the signed unlisted listing for the extension ID. Subsequent releases
+   just re-sign the same listing under a new version.
+
+### Per-release
+
+```bash
+# 1. Bump the version in BOTH places (they must match)
+#    - manifest.json:  "version": "0.1.0"
+#    - package.json:   "version": "0.1.0"
+# 2. Commit and push to main
+git add manifest.json package.json
+git commit -m "Bump version to 0.1.0"
+git push
+
+# 3. Tag and push the tag — this triggers the release workflow
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow will appear under the Actions tab. When it finishes (a few
+minutes — most of that is Mozilla signing), the new release will appear
+on the Releases page with the `.xpi` and `updates.json` attached.
+
+If the tag's version doesn't match `manifest.json` the workflow fails
+fast — bump and retag.
+
+To delete a botched release: delete the tag and the release on GitHub,
+fix the issue, retag with the same version. Mozilla's signing service
+will reject re-submission of an already-signed version, so if signing
+succeeded but a later step failed you have to bump to a new version.
+
+### How auto-update works
+
+- The manifest's `browser_specific_settings.gecko.update_url` points at
+  `https://github.com/SpeciesFileGroup/tw_firefox/releases/latest/download/updates.json`.
+- GitHub redirects `releases/latest/download/<asset>` to the matching
+  asset on the most recent non-prerelease release, so the URL above
+  always serves the freshest `updates.json`.
+- Firefox polls that URL on its own schedule (~every 24h, plus on
+  startup), reads the version inside, and silently downloads the
+  matching `.xpi` if it's newer than the installed version.
+- Each release's `updates.json` lists only that release's version. Older
+  installs polling will see the new version and update; you don't need
+  to maintain a cumulative version history.
+
+### Local builds (for testing without releasing)
+
+```bash
+npm install            # one-time, installs web-ext
+npm run lint           # static checks
+npm run build          # produces an unsigned .zip in web-ext-artifacts/
+```
+
+The unsigned build can be loaded as a Temporary Add-on via
+`about:debugging` for development. For a signed build without cutting a
+release, `npm run sign` (with `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET`
+in the environment) signs locally and downloads the .xpi.

@@ -4,27 +4,60 @@
   <meta charset="utf-8">
   <title>TaxonWorks Quick Filter — Options</title>
   <style>
-    body { font-family: system-ui, sans-serif; padding: 1em; min-width: 520px; }
+    :root {
+      color-scheme: light dark;
+      --bg: #fff;
+      --fg: #15141a;
+      --muted: #666;
+      --th-fg: #444;
+      --border: #eee;
+      --error: #a00;
+      --success: #0a0;
+      --sigil-fg: #888;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1c1b22;
+        --fg: #fbfbfe;
+        --muted: #b0b0b8;
+        --th-fg: #d0d0d8;
+        --border: #3a3944;
+        --error: #ff8080;
+        --success: #6fdf6f;
+        --sigil-fg: #9a9aa6;
+      }
+    }
+    body { font-family: system-ui, sans-serif; padding: 1em; min-width: 520px; background: var(--bg); color: var(--fg); }
     h2 { margin: 0 0 0.25em 0; font-size: 1.1em; }
-    .hint { color: #666; font-size: 0.85em; margin-bottom: 0.75em; }
+    .hint { color: var(--muted); font-size: 0.85em; margin-bottom: 0.75em; }
+    .hint code { background: color-mix(in srgb, var(--fg) 8%, transparent); padding: 0 0.2em; border-radius: 2px; }
     table { border-collapse: collapse; width: 100%; }
-    th, td { padding: 0.3em 0.4em; text-align: left; border-bottom: 1px solid #eee; font-size: 0.9em; }
-    th { font-weight: 600; color: #444; }
+    th, td { padding: 0.3em 0.4em; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9em; }
+    th { font-weight: 600; color: var(--th-fg); }
     input[type=text], input[type=url] { width: 100%; padding: 0.3em; box-sizing: border-box; font-family: inherit; }
     td.default-col { text-align: center; width: 4em; }
     td.remove-col  { width: 2em; text-align: center; }
     td.alias-col   { width: 8em; }
+    td.kind-col    { width: 11em; }
+    td.label-col   { width: 10em; }
+    .config-cell { display: flex; flex-direction: column; gap: 0.25em; }
+    .config-cell input, .config-cell select { width: 100%; }
     section { margin-top: 1.5em; }
-    details { margin-top: 0.75em; font-size: 0.85em; color: #444; }
+    details { margin-top: 0.75em; font-size: 0.85em; color: var(--th-fg); }
     details summary { cursor: pointer; }
-    dl.builtins { display: grid; grid-template-columns: auto 1fr; gap: 0.15em 0.75em; margin: 0.5em 0 0 0.5em; }
+    .builtins-group { margin-top: 0.5em; }
+    .builtins-group h3 { margin: 0.5em 0 0.25em 0; font-size: 0.9em; color: var(--th-fg); }
+    dl.builtins { display: grid; grid-template-columns: auto 1fr; gap: 0.15em 0.75em; margin: 0.25em 0 0 0.5em; }
     dl.builtins dt { font-family: monospace; }
-    dl.builtins dd { margin: 0; }
-    button.remove { background: none; border: none; color: #a00; cursor: pointer; font-size: 1.1em; }
-    .actions { margin-top: 0.75em; display: flex; gap: 0.5em; }
+    dl.builtins dd { margin: 0; display: flex; justify-content: space-between; align-items: baseline; gap: 0.5em; }
+    button.disable-builtin { background: none; border: 1px solid var(--border); color: var(--muted); cursor: pointer; font-size: 0.8em; padding: 0 0.4em; border-radius: 3px; }
+    button.disable-builtin:hover { color: var(--error); border-color: var(--error); }
+    button.remove { background: none; border: none; color: var(--error); cursor: pointer; font-size: 1.1em; }
+    .actions { margin-top: 0.75em; display: flex; gap: 0.5em; flex-wrap: wrap; }
+    .sync-toggle { display: flex; align-items: center; gap: 0.4em; margin-top: 0.6em; font-size: 0.9em; }
     .actions button { padding: 0.4em 0.9em; }
-    #status { margin-top: 0.5em; min-height: 1em; color: #0a0; }
-    #status.error { color: #a00; }
+    #status, #bang-status, #pref-status { margin-top: 0.5em; min-height: 1em; color: var(--success); }
+    #status.error, #bang-status.error, #pref-status.error { color: var(--error); }
   </style>
 </head>
 <body>
@@ -55,31 +88,71 @@
   <div id="status"></div>
 
   <section>
-    <h2>Custom bangs</h2>
+    <h2>Custom TaxonWorks bangs (<code>!</code>)</h2>
     <div class="hint">
-      Add your own aliases or override the defaults. Set the target to
-      <em>— disable —</em> to remove a built-in alias you don't want.
+      Paste any TaxonWorks URL from your browser — the host (and port) is
+      stripped automatically, so the alias works against whichever instance
+      <code>@host</code> points to at query time. Dev URLs like
+      <code>http://localhost:9999/projects/3/select</code> work too. You
+      can also paste just a host-relative path (e.g. <code>/hub</code>),
+      and <code>{}</code> in the path is substituted with the typed query.
       Don't include the leading <code>!</code> in the alias field.
     </div>
-    <table id="bangs-table">
+    <table id="internal-bangs-table">
       <thead>
         <tr>
           <th class="alias-col">Alias</th>
-          <th>Target</th>
+          <th class="kind-col">Type</th>
+          <th>TaxonWorks URL or path</th>
+          <th class="label-col">Label</th>
           <th class="remove-col"></th>
         </tr>
       </thead>
       <tbody></tbody>
     </table>
     <div class="actions">
-      <button id="add-bang">Add alias</button>
-      <button id="save-bangs">Save bangs</button>
+      <button id="add-internal-bang">Add !alias</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Custom external bangs (<code>~</code>)</h2>
+    <div class="hint">
+      Add or override aliases that point to an external site. Enter a
+      full URL template containing <code>{}</code> as the placeholder for
+      the typed query (e.g.
+      <code>https://example.com/search?q={}</code>). External bangs ignore
+      <code>@host</code>.
+      Don't include the leading <code>~</code> in the alias field.
+    </div>
+    <table id="external-bangs-table">
+      <thead>
+        <tr>
+          <th class="alias-col">Alias</th>
+          <th class="kind-col">Type</th>
+          <th>URL / Target</th>
+          <th class="label-col">Label</th>
+          <th class="remove-col"></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="actions">
+      <button id="add-external-bang">Add ~alias</button>
+      <button id="save-bangs">Save custom bangs</button>
     </div>
     <div id="bang-status"></div>
 
     <details>
       <summary>Built-in bangs (for reference)</summary>
-      <dl class="builtins" id="builtins"></dl>
+      <div class="builtins-group">
+        <h3>Internal — TaxonWorks filters (<code>!</code>)</h3>
+        <dl class="builtins" id="builtins-internal"></dl>
+      </div>
+      <div class="builtins-group">
+        <h3>External — other sites (<code>~</code>)</h3>
+        <dl class="builtins" id="builtins-external"></dl>
+      </div>
     </details>
   </section>
 
@@ -99,6 +172,29 @@
     <div id="pref-status"></div>
   </section>
 
+  <section>
+    <h2>Backup & sync</h2>
+    <div class="hint">
+      <strong>Export</strong> downloads your settings (custom bangs, host
+      list, default tab behavior) as a JSON file you can save or share.
+      <strong>Import</strong> reads one back. <strong>Use Firefox Sync</strong>
+      moves your settings into the synced storage area so they propagate
+      across the Firefox profiles you're signed in to. Off by default —
+      no Mozilla account needed.
+    </div>
+    <div class="actions">
+      <button id="export-settings" type="button">Export settings…</button>
+      <button id="import-settings" type="button">Import settings…</button>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+    </div>
+    <label class="sync-toggle">
+      <input type="checkbox" id="sync-enabled">
+      Use Firefox Sync (requires being signed in to Firefox Sync to actually sync)
+    </label>
+    <div id="backup-status"></div>
+  </section>
+
+<script src="storage.js"></script>
 <script src="bangs.js"></script>
 <script src="hosts.js"></script>
 <script src="options.js"></script>

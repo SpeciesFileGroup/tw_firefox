@@ -10,7 +10,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
-const SOURCE_FILES = ['bangs.js', 'hosts.js', 'background.js'];
+// storage.js must load first — bangs/hosts/background all call into it.
+const SOURCE_FILES = ['storage.js', 'bangs.js', 'hosts.js', 'background.js'];
 
 // The symbols we want the tests to reach. Function declarations at top-level
 // of a vm script become globals on the context automatically; top-level
@@ -19,6 +20,7 @@ const SOURCE_FILES = ['bangs.js', 'hosts.js', 'background.js'];
 const EXPORTS = [
   // bangs.js data
   'BANGS', 'BANG_TARGETS', 'INTERNAL_QUERY_KEYS', 'INTERNAL_ARRAY_PARAMS',
+  'INTERNAL_BARE_TERM_KEYS',
   // hosts.js data + helpers
   'DEFAULT_HOSTS', 'loadHosts', 'matchHostByOrigin', 'resolveHost',
   // background.js parser + URL builders
@@ -27,39 +29,49 @@ const EXPORTS = [
   'buildInternalUrl', 'buildExternalUrl',
   'encodeParamPair', 'chainPrefixForStage', 'buildChainQueryString',
   'getActiveTabOrigin', 'resolveAndBuild', 'refreshBangs',
+  'cheatsheetUrl', 'CHEATSHEET_SENTINEL', 'OPTIONS_SENTINEL',
+  // storage.js helpers
+  'activeStorage', 'isSyncEnabled', 'migrateSettings',
+  'SYNCED_KEYS', 'SETTINGS_EXPORT_SCHEMA',
   // background.js runtime state (useful for direct inspection)
   // ACTIVE_BANGS is a `let` — expose via a getter closure captured inside
   'ACTIVE_BANGS'
 ];
 
-function createBrowserStub({ storage = {}, activeTabUrl = null } = {}) {
-  const store = { ...storage };
+function createBrowserStub({ storage = {}, syncStorage = {}, activeTabUrl = null } = {}) {
+  const localStore = { ...storage };
+  const syncStore  = { ...syncStorage };
+
+  function makeArea(store) {
+    return {
+      get: async (keys) => {
+        if (keys === null || keys === undefined) return { ...store };
+        if (typeof keys === 'string') {
+          return store[keys] !== undefined ? { [keys]: store[keys] } : {};
+        }
+        if (Array.isArray(keys)) {
+          const out = {};
+          for (const k of keys) if (store[k] !== undefined) out[k] = store[k];
+          return out;
+        }
+        const out = {};
+        for (const k of Object.keys(keys)) {
+          out[k] = store[k] !== undefined ? store[k] : keys[k];
+        }
+        return out;
+      },
+      set: async (obj) => { Object.assign(store, obj); },
+      remove: async (k) => {
+        if (Array.isArray(k)) k.forEach(key => delete store[key]);
+        else delete store[k];
+      }
+    };
+  }
+
   return {
     storage: {
-      local: {
-        get: async (keys) => {
-          if (keys === null || keys === undefined) return { ...store };
-          if (typeof keys === 'string') {
-            return store[keys] !== undefined ? { [keys]: store[keys] } : {};
-          }
-          if (Array.isArray(keys)) {
-            const out = {};
-            for (const k of keys) if (store[k] !== undefined) out[k] = store[k];
-            return out;
-          }
-          // keys is an object of defaults
-          const out = {};
-          for (const k of Object.keys(keys)) {
-            out[k] = store[k] !== undefined ? store[k] : keys[k];
-          }
-          return out;
-        },
-        set: async (obj) => { Object.assign(store, obj); },
-        remove: async (k) => {
-          if (Array.isArray(k)) k.forEach(key => delete store[key]);
-          else delete store[k];
-        }
-      },
+      local: makeArea(localStore),
+      sync:  makeArea(syncStore),
       onChanged: { addListener: () => {} }
     },
     tabs: {
@@ -75,9 +87,10 @@ function createBrowserStub({ storage = {}, activeTabUrl = null } = {}) {
     runtime: {
       openOptionsPage: () => {}
     },
-    // The extension reads `store` via `browser.storage.local.get`, but tests
-    // may want to poke the stub directly. Expose it.
-    __store: store
+    // Tests can poke either store directly (e.g. to preseed sync data
+    // before exercising activeStorage()-based reads).
+    __store: localStore,
+    __syncStore: syncStore
   };
 }
 

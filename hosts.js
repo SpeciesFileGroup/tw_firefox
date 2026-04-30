@@ -16,7 +16,7 @@ const DEFAULT_HOSTS = [
 ];
 
 async function loadHosts() {
-  const { hosts } = await browser.storage.local.get('hosts');
+  const { hosts } = await (await activeStorage()).get('hosts');
   return (Array.isArray(hosts) && hosts.length) ? hosts : DEFAULT_HOSTS.map(h => ({ ...h }));
 }
 

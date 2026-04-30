@@ -1,0 +1,120 @@
+name: 💡 Suggest a new bang
+description: Propose a new internal `!` or external `~` bang.
+title: "~bang for Full Service Name (replace this)"
+labels:
+  - bang-suggestion
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new bang!
+
+        **Please keep the title in the form `~bang for Full Service Name`**
+        (or `!bang for ...` for internal TaxonWorks targets) — the list
+        stays scannable that way and other users can upvote what they want
+        with 👍 reactions. Sort issues by 👍 to see what the community
+        wants most: filter to `label:bang-suggestion` and pick "Most
+        thumbs up" from the Sort menu.
+
+        Tip: before opening, search existing issues with this label and
+        the in-extension cheatsheet (`tw !help`) to avoid duplicates.
+
+  - type: input
+    id: alias
+    attributes:
+      label: Alias
+      description: |
+        The short string users would type after the sigil. No leading
+        sigil. Lowercase letters, digits, `-`, `_` only.
+      placeholder: "mdd"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sigil
+    attributes:
+      label: Sigil
+      description: |
+        `!` is for TaxonWorks-internal pages; `~` is for third-party
+        services. "Both" is reserved for project-internal infrastructure
+        that happens to live on a third-party host (e.g. the GitHub
+        issue tracker).
+      options:
+        - "~ — external service (third-party site)"
+        - "! — internal TaxonWorks page"
+        - "Both ! and ~ — project-internal infra hosted externally"
+    validations:
+      required: true
+
+  - type: input
+    id: full_name
+    attributes:
+      label: Full name of the service
+      placeholder: "Mammal Diversity Database"
+    validations:
+      required: true
+
+  - type: input
+    id: url_pattern
+    attributes:
+      label: URL pattern (search / index)
+      description: |
+        The URL the bang should land on, with `{}` where the user's
+        query should be substituted. If the service has no usable
+        search-by-URL, paste just the search-page URL and we'll handle
+        it as a "land on the search page" bang.
+      placeholder: "https://www.example.org/search?q={}"
+    validations:
+      required: true
+
+  - type: input
+    id: numeric_url
+    attributes:
+      label: Direct-nav URL for IDs (optional)
+      description: |
+        If the service has stable per-record URLs (e.g.
+        `/taxon/12345/`), paste the pattern here with `{}` for the id.
+        We'll route pure-digit input (or `id:N`) through this template
+        instead of the search URL — like `~mdd 1006285` →
+        `/taxon/1006285/`.
+      placeholder: "https://www.example.org/record/{}/"
+
+  - type: textarea
+    id: search_notes
+    attributes:
+      label: Search-syntax notes
+      description: |
+        Anything quirky about how the site handles queries — does the
+        search box accept URL params at all? Does it use `key:value`
+        syntax inside the query (like GitHub: `is:closed author:foo`)?
+        Are there filter knobs we should expose as `key:value` extras?
+      placeholder: |
+        - Search box honors `?q=`. Yes / no.
+        - Uses `key:value` inside the query. Yes / no.
+        - Useful filters: e.g. `dataset_id`, `code`, ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example use cases
+      description: |
+        Concrete commands you'd run, showing what a typical user would
+        type and what they expect to see. These end up as the dropdown
+        examples for the bang.
+      placeholder: |
+        - `~mdd 1006285` — view taxon by MDD id
+        - `~mdd Bos taurus` — open the search page (manual entry)
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
+      description: |
+        Rationale, who'd use this, related bangs, ChatGPT-killer
+        argumentation, ...
+    validations:
+      required: false

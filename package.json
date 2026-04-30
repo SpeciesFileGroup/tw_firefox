@@ -4,6 +4,28 @@
   "description": "TaxonWorks Bang Search — Firefox omnibox extension for TaxonWorks filter tasks and biodiversity-informatics services.",
   "private": true,
   "scripts": {
-    "test": "node --test 'test/*.test.js'"
+    "test": "node --test 'test/*.test.js'",
+    "lint": "web-ext lint --self-hosted",
+    "build": "web-ext build --overwrite-dest",
+    "sign": "web-ext sign --channel=unlisted"
+  },
+  "devDependencies": {
+    "web-ext": "^8.3.0"
+  },
+  "webExt": {
+    "sourceDir": ".",
+    "artifactsDir": "web-ext-artifacts",
+    "ignoreFiles": [
+      "test/**",
+      ".github/**",
+      ".gitignore",
+      "package.json",
+      "package-lock.json",
+      "node_modules/**",
+      "web-ext-artifacts/**",
+      "pkg/**",
+      "updates.json",
+      "CLAUDE.md"
+    ]
   }
 }

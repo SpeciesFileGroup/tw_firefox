@@ -1,0 +1,73 @@
+name: 🐛 Bug report
+description: Something is broken or behaves incorrectly.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Before filing, check the [Issues list](https://github.com/SpeciesFileGroup/tw_firefox/issues?q=is%3Aissue) and existing [Discussions](https://github.com/SpeciesFileGroup/tw_firefox/discussions) — your bug may already be tracked.
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug. Include the exact omnibox input you typed if relevant.
+      placeholder: |
+        I typed `tw !sel 13 ; !dtn 5` and …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps so the maintainer can reproduce locally.
+      placeholder: |
+        1. Reload the extension via about:debugging
+        2. Type `tw !sel 13 ; !dtn 5`
+        3. Press Enter
+    validations:
+      required: true
+
+  - type: input
+    id: extension_version
+    attributes:
+      label: Extension version
+      description: Version from `about:addons` → TaxonWorks Omnibox, or the manifest's `"version"`.
+      placeholder: "0.0.1"
+    validations:
+      required: true
+
+  - type: input
+    id: firefox_version
+    attributes:
+      label: Firefox version
+      description: From `about:support` (top of the page).
+      placeholder: "Firefox 138.0"
+    validations:
+      required: true
+
+  - type: input
+    id: tw_host
+    attributes:
+      label: TaxonWorks instance (if relevant)
+      description: Which `@host` were you targeting? Production hosts or a local dev server.
+      placeholder: "@sandbox or http://localhost:3000"
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console output (optional)
+      description: |
+        If the bug is silent or you saw an error, paste anything noteworthy
+        from `about:debugging` → "Inspect" on the extension → Console.
+      render: shell
