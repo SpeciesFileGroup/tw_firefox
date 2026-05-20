@@ -1,7 +1,7 @@
 {
   "name": "tw_firefox",
   "version": "0.0.1",
-  "description": "TaxonWorks Bang Search — Firefox omnibox extension for TaxonWorks filter tasks and biodiversity-informatics services.",
+  "description": "TaxonWorks Bang Search — Firefox omnibox extension for TaxonWorks filter tasks and biodiversity informatics services.",
   "private": true,
   "scripts": {
     "test": "node --test 'test/*.test.js'",
