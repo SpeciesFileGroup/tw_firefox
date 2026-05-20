@@ -1,6 +1,6 @@
 // Omnibox input shapes:
 //   Internal bang:  !s title:"A new species" year_start:2020 author_id:1,2 @sandbox
-//   External bang:  !col Aedes aegypti
+//   External bang:  ~col Trifolium repens
 // The bang may appear at the start or end of the input, prefixed (!s) or suffixed (s!).
 // Instance token @<name> may appear anywhere and picks which configured host to use
 // (ignored for external bangs).
@@ -349,7 +349,7 @@ function buildInternalUrl(hostUrl, target, params) {
 function buildExternalUrl(target, rest) {
   // Bare tokens form the query string substituted for `{}` in the template.
   // `key:value` tokens are appended as extra URL params, so things like
-  // `!col dataset_id:1141 Trifolium` work against services that take filters.
+  // `~col dataset_id:1141 Trifolium` work against services that take filters.
   //
   // Exception: targets with `keyValueInQuery: true` treat `key:value` as
   // part of the search-string syntax (e.g. GitHub: `is:closed`,
@@ -604,7 +604,7 @@ async function resolveAndBuild(input) {
 }
 
 const DEFAULT_OMNIBOX_DESCRIPTION =
-  'TaxonWorks: !t name:Apis (TW filter), !co year:2020 @sandbox, ~col Aedes aegypti (external service)';
+  'TaxonWorks: !t name:Apis (TW filter), !co year:2020 @sandbox, ~col Trifolium repens (external service)';
 
 browser.omnibox.setDefaultSuggestion({ description: DEFAULT_OMNIBOX_DESCRIPTION });
 
