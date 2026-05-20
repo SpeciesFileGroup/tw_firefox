@@ -6,7 +6,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "tw-quick-filter@taxonworks",
-      "strict_min_version": "115.0",
+      "strict_min_version": "142.0",
       "update_url": "https://github.com/SpeciesFileGroup/tw_firefox/releases/latest/download/updates.json",
       "data_collection_permissions": {
         "required": ["none"]
