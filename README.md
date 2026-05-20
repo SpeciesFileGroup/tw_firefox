@@ -36,10 +36,10 @@ on your configured TaxonWorks instance.
 | `tw !t name:Apis`                    | Taxon names filter, `name=Apis`                   |
 | `tw !co @sandbox year:2020`          | Collection objects on the sandbox instance        |
 | `tw !s new species 2020`             | Sources filter, bare terms → `query_term=...`     |
-| `tw co! @dev`                        | Collection objects on localhost — suffix bang OK  |
+| `tw co! @dev`                        | Collection objects on localhost — suffix sigil OK |
 | `tw !ba subject_taxon_name_id:1234`  | Biological associations                           |
 | `tw ~col Aedes aegypti`              | Catalogue of Life search (external — `~` sigil)   |
-| `tw ~clb datasetKey:3LR Trifolium`   | ChecklistBank query pinned to a dataset           |
+| `tw ~clb datasetKey:3LR Trifolium`   | ChecklistBank query pinned to COL latest release  |
 | `tw ~orcid Guralnick`                | ORCID people search                               |
 | `tw ~bn "Smith, J."`                 | Bionomia roster search                            |
 | `tw ~doi 10.1234/abcd`               | Resolve a DOI via `dx.doi.org`                    |
@@ -71,7 +71,7 @@ If you want it to survive browser restarts without waiting for Mozilla
 signing, use Firefox Developer Edition, Nightly, or the ESR "unbranded" build,
 all of which allow unsigned extensions permanently via
 `xpinstall.signatures.required = false` in `about:config`. Regular Firefox
-release will reject unsigned add-ons on next restart.
+releases will reject unsigned add-ons on next restart.
 
 ## Syntax
 
@@ -83,9 +83,11 @@ except inside double quotes.
 - **Namespaced param** — `key:value`. The `key` is forwarded to the destination
   URL as-is.
   - For TaxonWorks filters, any param the filter class accepts will work.
-    Unknown keys are silently dropped by Rails strong params.
-  - For external services, params are appended to the template URL, so you can
-    pin a dataset or filter if the service supports it.
+    Unknown keys are silently dropped by Rails.
+  - For external services, params are appended to the template URL, so similar
+    key:value syntax should work for services that support URL parameters. Params
+    are almost always case sensitive and different conventions can be used
+    (e.g., datasetID, datasetId, dataset_id, DatasetId, DatasetID).
 - **Quoted value** — `key:"two words"`. Use for anything with spaces.
 - **Array value** (TW filters only) — `key:a,b,c` expands to
   `key[]=a&key[]=b&key[]=c`. For values that legitimately contain commas, quote
@@ -95,16 +97,17 @@ except inside double quotes.
   so you don't have to remember which params want the bracket form. If TW
   added a new array param after the snapshot was taken, you can still force
   it with `key[]:value` or `key:value,` (trailing comma).
-- **Instance selector** — `@name` anywhere in the input picks which configured
-  TaxonWorks host to send to. No `@name` means "use the configured default".
-  Ignored for external service bangs.
+- **Instance selector** — `@hostname` anywhere in the input picks which configured
+  TaxonWorks host to send to. No `@hostname` means either "target the TaxonWorks
+  instance in the currently focussed Firefox tab" or "use the configured default".
+  @hostname is ignored for external service bangs.
 - **Bare terms** — anything not matching the above is joined with spaces:
   - TW filters → sent as the filter's text-search param. The base class doesn't
     handle `query_term` generically — only `Sources` does — so each supported
     filter is mapped to the right attribute (e.g. `taxon_names` → `name`,
     `otus` → `name`, `descriptors` → `term`, `content` → `text`). Filters
     without a clear text param fall back to `query_term` (silently dropped by
-    Rails strong params, same as before).
+    Rails, same as before).
   - External services → substituted into the `{}` placeholder in the service's
     URL template.
 - **Bang sigils** — `!` for TaxonWorks targets (filter / browse / new / hub),
@@ -115,7 +118,7 @@ except inside double quotes.
   third-party.
 - **Trailing tab markers** — a trailing whitespace-separated token at the
   end of the query controls where the result opens. Six markers, all on
-  the same physical key (`\`/`|`):
+  the same physical US keyboard key (`\`/`|`):
 
   | Marker | Destination | Disposition |
   | --- | --- | --- |
@@ -173,6 +176,7 @@ filter conditions as nested sub-scopes that TW evaluates server-side.
 | Asserted distributions for taxa described since 2020 | `tw !s year_start:2020 > !tn > !ad` |
 | Biological associations involving a specific subject taxon | `tw !t name:Apis > !ba` |
 | Same as above, on sandbox, opened in a frontend background tab | `tw !t name:Apis > !ba @sandbox \\` |
+| Same as above, on sandbox, opened in a API foreground tab | `tw !t name:Apis > !ba @sandbox |` |
 
 ### Multi-stage nesting
 
@@ -375,9 +379,10 @@ instance, they're convenience pass-throughs to biodiversity-informatics
 services. The split sigil makes it visually obvious whether a bang
 targets your TW project or an outside service. Bare terms form the query
 string (substituted into `{}` in the URL template); `key:value` tokens are
-appended as extra URL parameters, so you can pin a dataset or filter if
+appended as extra URL parameters, so you can add additional parameters if 
 the destination service supports it. `@instance` is ignored for external
-bangs.
+bangs. Remember to pay close attention to the casing of parameter keys:
+external services can follow different naming conventions than Rails.
 
 Example: `tw ~clb datasetKey:3LR Trifolium` →
 `https://www.checklistbank.org/nameusage/search?q=Trifolium&datasetKey=3LR`
@@ -474,7 +479,7 @@ sandboxes (`sandbox`, `sanddollar`, `sandblaster`, `sandpaper`, `sandcastle`),
 `workshop`, and `dev` (`http://localhost:3000`). Edit, add, or remove rows;
 pick a default with the radio column; click **Save**.
 
-To target a specific instance for a single query, use `@name`:
+To target a specific instance for a single query, use `@hostname`:
 
 ```
 tw !s @sandblaster title:"new genus"
@@ -548,8 +553,6 @@ overrides.
   keys, so typos like `yaer:2020` produce a less-filtered result rather than
   an error. A future enhancement could derive per-filter param lists from
   `lib/queries/*/filter.rb` and surface them as suggestions.
-- Host auto-detect ("I'm already on a sandbox tab, use that") is not
-  implemented; explicit `@name` or the configured default is what you get.
 - Some external services (notably ITIS) only expose POST-based search forms,
   which can't be linked to directly and therefore aren't included.
 
@@ -586,8 +589,9 @@ The options page has a **Backup & sync** section with three controls:
 - **Export settings** — downloads a JSON file containing your custom
   bangs, host list, and default tab behavior. Save it for backup or
   share it with collaborators.
-- **Import settings** — reads one back. Schema-stamped (`tw-firefox-omnibox/1`)
-  so future format changes won't silently corrupt old files.
+- **Import settings** — loads a JSON file containing your custom bangs. 
+  Schema-stamped (`tw-firefox-omnibox/1`) so future format changes
+  won't silently corrupt old files.
 - **Use Firefox Sync** — opt-in checkbox. When on, the same settings
   move to `browser.storage.sync` so they propagate across the Firefox
   profiles you're signed in to. Off by default; no Mozilla account
