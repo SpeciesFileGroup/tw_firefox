@@ -56,27 +56,38 @@ on your configured TaxonWorks instance.
 | `tw !sel 13 ; !dtn 3893823`          | Switch to project 13, then deep-link to that taxon name (sequential `;`) |
 | `tw !help`                           | Open the cheatsheet — every built-in bang, with examples         |
 
-## Installing (temporary / development)
+## Installing
 
-Until the extension is signed and published on addons.mozilla.org you can load
-it directly from this repo. Temporary add-ons are removed when Firefox
-restarts — you'll need to re-load after every restart.
+### Signed release (recommended)
+
+1. Download the latest signed `.xpi` from
+   [Releases](https://github.com/SpeciesFileGroup/tw_firefox/releases).
+2. In Firefox, open `about:addons`.
+3. Click the gear icon → **Install Add-on From File…**
+4. Pick the `.xpi` file.
+5. Once installed, open the extension's options page (three-dot menu →
+   **Manage Extension** → **Options**) and set your default TaxonWorks
+   instance.
+
+The signed extension persists across Firefox restarts and auto-updates to new
+releases. Type `tw ` (with a trailing space) in the address bar to start
+using it.
+
+### Development / temporary load
+
+To test changes during development, you can load the extension directly from
+this repo. Temporary add-ons are removed when Firefox restarts — you'll need
+to re-load after every restart.
 
 1. Clone this repo somewhere Firefox can read it.
 2. In Firefox, open `about:debugging#/runtime/this-firefox`.
 3. Click **Load Temporary Add-on…**
 4. Pick the `manifest.json` file in the repo root.
-5. Open the extension's options page once (`about:addons` → TaxonWorks
-   Omnibox → Options) and set your default TaxonWorks instance.
 
-That's it — type `tw ` (with a trailing space) in the address bar to start
-using it.
-
-If you want it to survive browser restarts without waiting for Mozilla
-signing, use Firefox Developer Edition, Nightly, or the ESR "unbranded" build,
-all of which allow unsigned extensions permanently via
+For a persistent unsigned install during development, use Firefox Developer
+Edition, Nightly, or ESR-unbranded, and set
 `xpinstall.signatures.required = false` in `about:config`. Regular Firefox
-releases will reject unsigned add-ons on next restart.
+releases require signed add-ons.
 
 ## Syntax
 
@@ -607,11 +618,12 @@ The options page has a **Backup & sync** section with three controls:
 
 ## Publishing status
 
-Not yet published on addons.mozilla.org. Distribution is **self-hosted on
-GitHub Releases**, signed by Mozilla as an unlisted addon. Firefox auto-
-updates from the most recent release via the `update_url` baked into the
+Distribution is **self-hosted on GitHub Releases**, signed by Mozilla as an
+unlisted addon. Signed `.xpi` files are available at
+[Releases](https://github.com/SpeciesFileGroup/tw_firefox/releases). Firefox
+auto-updates from the most recent release via the `update_url` baked into the
 manifest; users install the signed `.xpi` once from a release page and
-subsequent versions arrive automatically.
+subsequent versions arrive automatically. Not published on addons.mozilla.org.
 
 ## Releasing
 
