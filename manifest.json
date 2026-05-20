@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TaxonWorks Omnibox",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Type 'tw ' in the address bar, then a bang like !s, !t, !co and key:value params to jump straight to a TaxonWorks filter task.",
   "browser_specific_settings": {
     "gecko": {
