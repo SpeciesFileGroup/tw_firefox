@@ -685,3 +685,17 @@ The unsigned build can be loaded as a Temporary Add-on via
 `about:debugging` for development. For a signed build without cutting a
 release, `npm run sign` (with `WEB_EXT_API_KEY` / `WEB_EXT_API_SECRET`
 in the environment) signs locally and downloads the .xpi.
+
+
+## Contributing
+
+Bug reports and pull requests are welcome on GitHub at https://github.com/SpeciesFileGroup/tw_firefox. This project is intended to be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [code of conduct](https://github.com/SpeciesFileGroup/tw_firefox/blob/main/CODE_OF_CONDUCT.md).
+
+## License
+
+The Firefox extension is available as open source under the terms of the [MIT license](https://github.com/SpeciesFileGroup/tw_firefox/blob/main/LICENSE.txt). You can learn more about the MIT license on [Wikipedia](https://en.wikipedia.org/wiki/MIT_License) and compare it with other open source licenses at the [Open Source Initiative](https://opensource.org/license/mit/).
+
+## Code of Conduct
+
+Everyone interacting in the Wikimelon project's codebases, issue trackers, chat rooms and mailing lists is expected to follow the [code of conduct](https://github.com/SpeciesFileGroup/tw_firefox/blob/main/CODE_OF_CONDUCT.md).
+
