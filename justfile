@@ -1,4 +1,4 @@
-sources := "manifest.json background.js bangs.js hosts.js options.html options.js"
+sources := "manifest.json background.js bangs.js hosts.js options.html options.js storage.js"
 out := "pkg/taxonworks-omnibox.zip"
 
 pkg:
