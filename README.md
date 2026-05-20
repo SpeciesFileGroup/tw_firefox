@@ -1,5 +1,10 @@
 # TaxonWorks Omnibox
 
+<img width="200" height="200" alt="taxonworks_labs_logo_black" src="https://github.com/user-attachments/assets/aed6a9d3-e737-4954-861c-99dfc3f89040" />
+
+TaxonWorks Labs Product
+
+
 A Firefox address-bar extension that jumps you straight to a TaxonWorks
 filter task — and, while you're at it, to any of ~35 biodiversity-informatics
 services that you might reference during the same session. Type `tw`, a
