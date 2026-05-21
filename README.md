@@ -50,8 +50,8 @@ on your configured TaxonWorks instance.
 | `tw ~doi 10.1234/abcd`               | Resolve a DOI via `dx.doi.org`                    |
 | `tw ~gnp Aedes aegypti L.`           | GN Parser (with details)                          |
 | `tw !t Apis \`                       | Frontend in a new tab                             |
-| `tw !t Apis ||`                      | API view in a new background tab                  |
-| `tw !t Apis \|`                      | Both: frontend in new tab + API in new bg tab     |
+| `tw !t Apis \|\|`                      | API view in a new background tab                  |
+| `tw !t Apis \\|`                      | Both: frontend in new tab + API in new bg tab     |
 | `tw !sel 50`                         | Switch to project 50 (rawPath `{}` substitution)  |
 | `tw !sel 13 ; !dtn 3893823`          | Switch to project 13, then deep-link to that taxon name (sequential `;`) |
 | `tw !help`                           | Open the cheatsheet — every built-in bang, with examples         |
